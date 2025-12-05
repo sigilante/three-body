@@ -1,0 +1,13 @@
+.env
+.vscode/
+.data.*
+/hoonc
+test-leader
+test-follower
+.nockchain_identity
+.nockchain_identity.peerid
+target
+assets/*.jam
+!crates/nockapp/test-jams
+keys.export
+secrets.toml
