@@ -1,927 +1,435 @@
-// Server session tracking
-let gameId = null;
-let serverWalletPkh = null;
+// Three-Body Problem Visualization
+// Client-side physics simulation with beautiful particle trails
 
-// Game State
-const gameState = {
-    deck: [],
-    playerHand: [],
-    dealerHand: [],
-    bank: 1000,
-    currentBet: 0,
-    winLoss: 0,
-    gameInProgress: false,
-    dealerTurn: false
+// Preset initial conditions from https://observablehq.com/@rreusser/periodic-planar-three-body-orbits
+const PRESETS = {
+    'figure-eight': {
+        name: 'Figure-8 (Chenciner-Montgomery)',
+        bodies: [
+            { px: 0.97000436, py: -0.24308753, vx: 0.466203685, vy: 0.43236573, mass: 1, color: '#ff3366' },
+            { px: -0.97000436, py: 0.24308753, vx: 0.466203685, vy: 0.43236573, mass: 1, color: '#33ff66' },
+            { px: 0, py: 0, vx: -0.93240737, vy: -0.86473146, mass: 1, color: '#3366ff' }
+        ],
+        G: 1.0,
+        dt: 0.001
+    },
+    'butterfly': {
+        name: 'Butterfly',
+        bodies: [
+            { px: 0.306893, py: 0.125507, vx: 0.080584, vy: 0.588836, mass: 1, color: '#ff3366' },
+            { px: -0.306893, py: -0.125507, vx: 0.080584, vy: 0.588836, mass: 1, color: '#33ff66' },
+            { px: 0, py: 0, vx: -0.161168, vy: -1.177672, mass: 1, color: '#3366ff' }
+        ],
+        G: 1.0,
+        dt: 0.001
+    },
+    'moth': {
+        name: 'Moth I',
+        bodies: [
+            { px: 0.464445, py: 0.396060, vx: 0.079766, vy: 0.588836, mass: 1, color: '#ff3366' },
+            { px: -0.464445, py: -0.396060, vx: 0.079766, vy: 0.588836, mass: 1, color: '#33ff66' },
+            { px: 0, py: 0, vx: -0.159532, vy: -1.177672, mass: 1, color: '#3366ff' }
+        ],
+        G: 1.0,
+        dt: 0.001
+    },
+    'dragonfly': {
+        name: 'Dragonfly',
+        bodies: [
+            { px: 1.04987, py: 0, vx: 0, vy: 0.736915, mass: 1, color: '#ff3366' },
+            { px: -1.04987, py: 0, vx: 0, vy: 0.736915, mass: 1, color: '#33ff66' },
+            { px: 0, py: 0, vx: 0, vy: -1.47383, mass: 1, color: '#3366ff' }
+        ],
+        G: 1.0,
+        dt: 0.001
+    },
+    'yarn': {
+        name: 'Yarn',
+        bodies: [
+            { px: 0.558287, py: 0.349769, vx: 0.343127, vy: 0.663582, mass: 1, color: '#ff3366' },
+            { px: -0.558287, py: -0.349769, vx: 0.343127, vy: 0.663582, mass: 1, color: '#33ff66' },
+            { px: 0, py: 0, vx: -0.686254, vy: -1.327164, mass: 1, color: '#3366ff' }
+        ],
+        G: 1.0,
+        dt: 0.001
+    },
+    'goggles': {
+        name: 'Goggles',
+        bodies: [
+            { px: 0.347111, py: 0.532728, vx: 0.398905, vy: 0.039998, mass: 1, color: '#ff3366' },
+            { px: -0.347111, py: -0.532728, vx: 0.398905, vy: 0.039998, mass: 1, color: '#33ff66' },
+            { px: 0, py: 0, vx: -0.79781, vy: -0.079996, mass: 1, color: '#3366ff' }
+        ],
+        G: 1.0,
+        dt: 0.001
+    }
 };
 
-// Card suits and ranks
-const suits = ['hearts', 'diamonds', 'clubs', 'spades'];
-const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-const rankValues = {
-    'A': 11,
-    '2': 2,
-    '3': 3,
-    '4': 4,
-    '5': 5,
-    '6': 6,
-    '7': 7,
-    '8': 8,
-    '9': 9,
-    '10': 10,
-    'J': 10,
-    'Q': 10,
-    'K': 10
-};
+class ThreeBodySimulation {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.setupCanvas();
 
-// Initialize the game
-async function initGame() {
-    // Try to restore previous session from localStorage
-    const savedGameId = localStorage.getItem('blackjack-gameId');
-    const savedServerPkh = localStorage.getItem('blackjack-serverPkh');
+        // Simulation state
+        this.bodies = [];
+        this.trails = [[], [], []];
+        this.maxTrailLength = 500;
+        this.time = 0;
+        this.stepCount = 0;
+        this.isRunning = false;
+        this.speed = 1.0;
 
-    if (savedServerPkh) {
-        serverWalletPkh = savedServerPkh;
+        // Physics parameters
+        this.G = 1.0;
+        this.dt = 0.001;
+        this.softening = 0.01;  // Prevents singularities
+
+        // Session info
+        this.sessionId = null;
+        this.sessionStatus = 'Not started';
+
+        // Animation
+        this.animationId = null;
+        this.stepsPerFrame = 10;  // Run multiple physics steps per render frame
+
+        this.setupEventListeners();
+        this.loadPreset('figure-eight');
     }
 
-    if (savedGameId) {
-        try {
-            console.log('Attempting to restore session:', savedGameId);
-            // Try to restore the session
-            const response = await fetch(`/blackjack/api/${savedGameId}/status`);
-            console.log('Restore response status:', response.status);
-            if (response.ok) {
-                const session = await response.json();
-                console.log('Session data:', session);
-                // Restore session
-                gameId = savedGameId;
-                gameState.bank = session.bank;
-                gameState.currentBet = session.currentBet;
-                gameState.gameInProgress = session.gameInProgress;
-                gameState.playerHand = session.playerHand || [];
-                gameState.dealerHand = session.dealerHand || [];
-                gameState.dealerTurn = session.dealerTurn;
-                gameState.winLoss = session.winLoss || 0;
+    setupCanvas() {
+        // Set canvas size
+        const container = this.canvas.parentElement;
+        this.canvas.width = container.clientWidth;
+        this.canvas.height = container.clientHeight;
 
-                console.log('Restored gameState:', {
-                    bank: gameState.bank,
-                    currentBet: gameState.currentBet,
-                    gameInProgress: gameState.gameInProgress,
-                    dealerTurn: gameState.dealerTurn,
-                    playerHandLength: gameState.playerHand.length,
-                    dealerHandLength: gameState.dealerHand.length,
-                    winLoss: gameState.winLoss
-                });
+        // Calculate scale and offset for coordinate transformation
+        this.scale = Math.min(this.canvas.width, this.canvas.height) * 0.25;
+        this.centerX = this.canvas.width / 2;
+        this.centerY = this.canvas.height / 2;
 
-                // Update button states based on game state
-                console.log('Setting button states...');
-                if (gameState.gameInProgress) {
-                    console.log('Game in progress - enabling Hit/Stand, disabling Deal');
-                    document.getElementById('hit-btn').disabled = false;
-                    document.getElementById('stand-btn').disabled = false;
-                    document.getElementById('deal-btn').disabled = true;
-                } else if (gameState.currentBet > 0) {
-                    console.log('Bet placed but no game - enabling Deal');
-                    document.getElementById('deal-btn').disabled = false;
-                } else {
-                    console.log('No bet, no game - all buttons should be disabled or in default state');
-                }
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            this.canvas.width = container.clientWidth;
+            this.canvas.height = container.clientHeight;
+            this.scale = Math.min(this.canvas.width, this.canvas.height) * 0.25;
+            this.centerX = this.canvas.width / 2;
+            this.centerY = this.canvas.height / 2;
+        });
+    }
 
-                updateDisplay();
-                updateSessionInfo();
-                setStatus(`Resumed session ${gameId.substring(0, 8)}... (Bank: ℕ${gameState.bank})`);
-                return;
-            } else {
-                // Session no longer exists, clear it
-                localStorage.removeItem('blackjack-gameId');
+    setupEventListeners() {
+        document.getElementById('play-btn').addEventListener('click', () => this.play());
+        document.getElementById('pause-btn').addEventListener('click', () => this.pause());
+        document.getElementById('reset-btn').addEventListener('click', () => this.reset());
+
+        const speedSlider = document.getElementById('speed-slider');
+        speedSlider.addEventListener('input', (e) => {
+            this.speed = parseFloat(e.target.value);
+            document.getElementById('speed-value').textContent = `${this.speed.toFixed(1)}x`;
+        });
+
+        document.getElementById('load-preset-btn').addEventListener('click', () => {
+            const presetId = document.getElementById('preset-select').value;
+            if (presetId !== 'custom') {
+                this.loadPreset(presetId);
             }
-        } catch (error) {
-            console.error('Error restoring session:', error);
-            localStorage.removeItem('blackjack-gameId');
-        }
+        });
+
+        document.getElementById('apply-config-btn').addEventListener('click', () => {
+            this.applyCustomConfig();
+        });
+
+        document.getElementById('save-state-btn').addEventListener('click', () => {
+            this.saveState();
+        });
     }
 
-    // No saved session or restore failed
-    updateDisplay();
-    setStatus('Welcome! Click "New Game" or place a bet to start playing.');
-}
+    loadPreset(presetId) {
+        const preset = PRESETS[presetId];
+        if (!preset) return;
 
-// Create and shuffle a deck
-function createDeck() {
-    const deck = [];
-    for (const suit of suits) {
-        for (const rank of ranks) {
-            deck.push({ suit, rank });
-        }
-    }
-    return shuffleDeck(deck);
-}
+        this.pause();
+        this.bodies = preset.bodies.map(b => ({
+            pos: { x: b.px, y: b.py },
+            vel: { x: b.vx, y: b.vy },
+            mass: b.mass,
+            color: b.color
+        }));
 
-// Fisher-Yates shuffle
-function shuffleDeck(deck) {
-    const shuffled = [...deck];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-}
+        this.G = preset.G;
+        this.dt = preset.dt;
+        this.time = 0;
+        this.stepCount = 0;
+        this.trails = [[], [], []];
 
-// Calculate hand value
-function calculateHandValue(hand) {
-    let value = 0;
-    let aces = 0;
-
-    for (const card of hand) {
-        value += rankValues[card.rank];
-        if (card.rank === 'A') {
-            aces++;
-        }
+        // Update input fields
+        this.updateInputFields();
+        this.render();
     }
 
-    // Adjust for aces if value is over 21
-    while (value > 21 && aces > 0) {
-        value -= 10;
-        aces--;
+    updateInputFields() {
+        const inputs = document.querySelectorAll('#body-configs input[type="number"]');
+        inputs.forEach(input => {
+            const bodyIdx = parseInt(input.dataset.body);
+            const prop = input.dataset.prop;
+            const body = this.bodies[bodyIdx];
+
+            if (!body) return;
+
+            switch(prop) {
+                case 'px': input.value = body.pos.x.toFixed(2); break;
+                case 'py': input.value = body.pos.y.toFixed(2); break;
+                case 'vx': input.value = body.vel.x.toFixed(2); break;
+                case 'vy': input.value = body.vel.y.toFixed(2); break;
+            }
+        });
     }
 
-    return value;
-}
+    applyCustomConfig() {
+        const inputs = document.querySelectorAll('#body-configs input[type="number"]');
+        const newBodies = [
+            { pos: {x: 0, y: 0}, vel: {x: 0, y: 0}, mass: 1, color: '#ff3366' },
+            { pos: {x: 0, y: 0}, vel: {x: 0, y: 0}, mass: 1, color: '#33ff66' },
+            { pos: {x: 0, y: 0}, vel: {x: 0, y: 0}, mass: 1, color: '#3366ff' }
+        ];
 
-// Render a card element
-function renderCard(card, hidden = false) {
-    const cardDiv = document.createElement('div');
-    cardDiv.className = 'card';
+        inputs.forEach(input => {
+            const bodyIdx = parseInt(input.dataset.body);
+            const prop = input.dataset.prop;
+            const value = parseFloat(input.value);
 
-    if (hidden) {
-        cardDiv.classList.add('back');
-    } else {
-        cardDiv.classList.add(`${card.suit}-${card.rank}`);
+            switch(prop) {
+                case 'px': newBodies[bodyIdx].pos.x = value; break;
+                case 'py': newBodies[bodyIdx].pos.y = value; break;
+                case 'vx': newBodies[bodyIdx].vel.x = value; break;
+                case 'vy': newBodies[bodyIdx].vel.y = value; break;
+            }
+        });
+
+        this.pause();
+        this.bodies = newBodies;
+        this.time = 0;
+        this.stepCount = 0;
+        this.trails = [[], [], []];
+        this.render();
     }
 
-    return cardDiv;
-}
+    // Vector operations
+    vecAdd(a, b) {
+        return { x: a.x + b.x, y: a.y + b.y };
+    }
 
-// Drag state for card dragging effect
-const dragState = {
-    isDragging: false,
-    card: null,
-    placeholder: null,  // Placeholder to maintain spacing
-    startX: 0,
-    startY: 0,
-    offsetX: 0,
-    offsetY: 0,
-    originalParent: null,
-    originalPosition: null
-};
+    vecSub(a, b) {
+        return { x: a.x - b.x, y: a.y - b.y };
+    }
 
-// Initialize card dragging for player cards
-function makeCardDraggable(cardElement, isPlayerCard) {
-    if (!isPlayerCard) return; // Only player cards are draggable
+    vecMul(v, s) {
+        return { x: v.x * s, y: v.y * s };
+    }
 
-    cardElement.style.cursor = 'grab';
+    vecMag(v) {
+        return Math.sqrt(v.x * v.x + v.y * v.y);
+    }
 
-    cardElement.addEventListener('mousedown', function(e) {
-        e.preventDefault();
+    // Calculate acceleration on body i due to body j
+    calcAcceleration(i, j) {
+        const r = this.vecSub(this.bodies[j].pos, this.bodies[i].pos);
+        const distSq = r.x * r.x + r.y * r.y;
+        const softenedDistSq = distSq + this.softening * this.softening;
+        const dist = Math.sqrt(softenedDistSq);
 
-        // Store original position, parent, and sibling for exact reinsertion
-        const rect = cardElement.getBoundingClientRect();
-        const parent = cardElement.parentElement;
-        const nextSibling = cardElement.nextSibling;
+        const forceMag = this.G * this.bodies[j].mass / softenedDistSq;
+        const dir = this.vecMul(r, 1 / dist);
 
-        dragState.originalPosition = {
-            left: rect.left,
-            top: rect.top,
-            parent: parent,
-            nextSibling: nextSibling
+        return this.vecMul(dir, forceMag);
+    }
+
+    // Euler integration step
+    eulerStep() {
+        // Calculate accelerations for all bodies
+        const accelerations = this.bodies.map((_, i) => {
+            let acc = { x: 0, y: 0 };
+            for (let j = 0; j < this.bodies.length; j++) {
+                if (i !== j) {
+                    const a = this.calcAcceleration(i, j);
+                    acc = this.vecAdd(acc, a);
+                }
+            }
+            return acc;
+        });
+
+        // Update velocities and positions
+        this.bodies.forEach((body, i) => {
+            body.vel = this.vecAdd(body.vel, this.vecMul(accelerations[i], this.dt));
+            body.pos = this.vecAdd(body.pos, this.vecMul(body.vel, this.dt));
+
+            // Add to trail
+            this.trails[i].push({ x: body.pos.x, y: body.pos.y });
+            if (this.trails[i].length > this.maxTrailLength) {
+                this.trails[i].shift();
+            }
+        });
+
+        this.time += this.dt;
+        this.stepCount++;
+    }
+
+    // Convert simulation coordinates to canvas coordinates
+    simToCanvas(pos) {
+        return {
+            x: this.centerX + pos.x * this.scale,
+            y: this.centerY - pos.y * this.scale  // Flip Y axis
         };
-
-        // Create invisible placeholder to maintain spacing
-        const placeholder = document.createElement('div');
-        placeholder.className = 'card card-placeholder';
-        placeholder.style.width = rect.width + 'px';
-        placeholder.style.height = rect.height + 'px';
-        placeholder.style.visibility = 'hidden';  // Invisible but takes up space
-        dragState.placeholder = placeholder;
-
-        // Insert placeholder at card's position before removing card
-        parent.insertBefore(placeholder, cardElement);
-
-        // Calculate offset from mouse to card top-left
-        dragState.offsetX = e.clientX - rect.left;
-        dragState.offsetY = e.clientY - rect.top;
-
-        // Move card to body with absolute positioning for dragging
-        dragState.isDragging = true;
-        dragState.card = cardElement;
-        cardElement.style.position = 'fixed';
-        cardElement.style.left = rect.left + 'px';
-        cardElement.style.top = rect.top + 'px';
-        cardElement.style.zIndex = '1000';
-        cardElement.style.cursor = 'grabbing';
-        cardElement.style.transition = 'none'; // Disable transitions during drag
-
-        document.body.appendChild(cardElement);
-    });
-}
-
-// Global mouse move handler
-document.addEventListener('mousemove', function(e) {
-    if (!dragState.isDragging || !dragState.card) return;
-
-    e.preventDefault();
-
-    // Update card position to follow mouse
-    dragState.card.style.left = (e.clientX - dragState.offsetX) + 'px';
-    dragState.card.style.top = (e.clientY - dragState.offsetY) + 'px';
-});
-
-// Global mouse up handler
-document.addEventListener('mouseup', function(e) {
-    if (!dragState.isDragging || !dragState.card) return;
-
-    e.preventDefault();
-
-    const card = dragState.card;
-    const origPos = dragState.originalPosition;
-
-    // Enable smooth transition for return animation
-    card.style.transition = 'all 0.3s ease-out';
-    card.style.left = origPos.left + 'px';
-    card.style.top = origPos.top + 'px';
-    card.style.cursor = 'grab';
-
-    // After animation completes, return card to original position in parent
-    setTimeout(() => {
-        card.style.position = '';
-        card.style.left = '';
-        card.style.top = '';
-        card.style.zIndex = '';
-        card.style.transition = '';
-
-        // Remove placeholder and insert card back at its position
-        if (dragState.placeholder && dragState.placeholder.parentElement) {
-            dragState.placeholder.parentElement.removeChild(dragState.placeholder);
-        }
-
-        // Insert card back at exact same position
-        // The placeholder was at the original position, so use the stored nextSibling
-        origPos.parent.insertBefore(card, origPos.nextSibling);
-
-        // Reset drag state
-        dragState.isDragging = false;
-        dragState.card = null;
-        dragState.placeholder = null;
-        dragState.originalPosition = null;
-    }, 300); // Match transition duration
-});
-
-// Update the display
-function updateDisplay() {
-    // Update bank and bet displays
-    document.getElementById('bank-amount').textContent = `ℕ${gameState.bank}`;
-    document.getElementById('current-bet').textContent = `ℕ${gameState.currentBet}`;
-
-    // Format win/loss with explicit sign
-    const winLoss = gameState.winLoss;
-    const winLossText = winLoss > 0 ? `+${winLoss}` : `${winLoss}`;
-    document.getElementById('win-loss').textContent = `ℕ${winLossText}`;
-
-    // Update bet display
-    updateBetDisplay();
-
-    // Update hands
-    updateHand('player');
-    updateHand('dealer');
-}
-
-// Update the visual bet display with chips
-function updateBetDisplay() {
-    const betDisplay = document.getElementById('bet-display');
-    betDisplay.innerHTML = '';
-
-    if (gameState.currentBet === 0) {
-        return;
     }
 
-    // Break down bet into chips (largest first)
-    let remaining = gameState.currentBet;
-    const chipDenominations = [100, 50, 25, 10, 5, 1];
-    const chipPositions = {
-        100: '-801px -525px',
-        50: '-756px -525px',
-        25: '-711px -525px',
-        10: '-801px -480px',
-        5: '-756px -480px',
-        1: '-711px -480px'
-    };
+    // Render the simulation
+    render() {
+        const ctx = this.ctx;
 
-    const chips = [];
-    for (const denom of chipDenominations) {
-        while (remaining >= denom) {
-            chips.push(denom);
-            remaining -= denom;
-        }
-    }
+        // Clear canvas with fade effect
+        ctx.fillStyle = 'rgba(10, 14, 39, 0.1)';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // Display chips stacked with slight offset
-    chips.forEach((denom, index) => {
-        const chipDiv = document.createElement('div');
-        chipDiv.className = 'bet-display-chip';
-        chipDiv.style.backgroundPosition = chipPositions[denom];
-        chipDiv.style.top = `${25 - index * 4}px`; // Stack chips with double spacing
-        chipDiv.style.zIndex = index;
-        betDisplay.appendChild(chipDiv);
-    });
-}
+        // Draw trails
+        this.trails.forEach((trail, i) => {
+            if (trail.length < 2) return;
 
-// Update a specific hand display
-function updateHand(player) {
-    const hand = player === 'player' ? gameState.playerHand : gameState.dealerHand;
-    const handElement = document.getElementById(`${player}-hand`);
-    const scoreElement = document.getElementById(`${player}-score`);
+            const color = this.bodies[i].color;
+            const gradient = ctx.createLinearGradient(0, 0, this.canvas.width, this.canvas.height);
 
-    handElement.innerHTML = '';
-
-    hand.forEach((card, index) => {
-        // Hide dealer's first card until dealer's turn
-        const hidden = player === 'dealer' && index === 0 && !gameState.dealerTurn;
-        const cardElement = renderCard(card, hidden);
-        handElement.appendChild(cardElement);
-
-        // Make player cards draggable for visual effect
-        makeCardDraggable(cardElement, player === 'player');
-    });
-
-    // Calculate and display score
-    if (hand.length > 0) {
-        if (player === 'dealer' && !gameState.dealerTurn) {
-            scoreElement.textContent = '?';
-        } else {
-            const value = calculateHandValue(hand);
-            scoreElement.textContent = `Score: ${value}`;
-        }
-    } else {
-        scoreElement.textContent = '';
-    }
-}
-
-// Place a bet
-function placeBet(amount) {
-    if (gameState.gameInProgress) {
-        setStatus('Cannot change bet during a game.');
-        return;
-    }
-
-    // If this is the first bet after a hand ended, clear the hands
-    // (The deal button being disabled indicates we're between hands with hands visible)
-    if (document.getElementById('deal-btn').disabled && (gameState.playerHand.length > 0 || gameState.dealerHand.length > 0)) {
-        gameState.playerHand = [];
-        gameState.dealerHand = [];
-        updateDisplay();
-    }
-
-    if (gameState.currentBet + amount > gameState.bank) {
-        setStatus('Insufficient funds!');
-        return;
-    }
-
-    gameState.currentBet += amount;
-    updateDisplay();
-
-    // Enable deal button if bet is placed
-    if (gameState.currentBet > 0) {
-        document.getElementById('deal-btn').disabled = false;
-    }
-
-    setStatus(`Bet placed: ℕ${gameState.currentBet}`);
-}
-
-// Clear the current bet
-function clearBet() {
-    if (gameState.gameInProgress) {
-        setStatus('Cannot change bet during a game.');
-        return;
-    }
-
-    gameState.currentBet = 0;
-    updateDisplay();
-    document.getElementById('deal-btn').disabled = true;
-    setStatus('Bet cleared.');
-}
-
-// Start a new game (reset state)
-async function startNewGame() {
-    try {
-        // Call server API to create new session
-        const response = await fetch('/blackjack/api/session/create', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({})
-        });
-
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        // Update session and game state from server
-        gameId = data.gameId;
-        serverWalletPkh = data.serverWalletPkh;
-
-        // Save to localStorage for persistence
-        localStorage.setItem('blackjack-gameId', gameId);
-        localStorage.setItem('blackjack-serverPkh', serverWalletPkh);
-
-        gameState.bank = data.bank;  // Initial bank from server
-        gameState.currentBet = 0;
-        gameState.winLoss = data.winLoss;
-        gameState.gameInProgress = false;
-        gameState.dealerTurn = false;
-        gameState.playerHand = [];
-        gameState.dealerHand = [];
-        gameState.deck = [];
-
-        document.getElementById('deal-btn').disabled = true;
-        document.getElementById('hit-btn').disabled = true;
-        document.getElementById('stand-btn').disabled = true;
-        document.getElementById('double-btn').disabled = true;
-        document.getElementById('split-btn').disabled = true;
-        document.getElementById('surrender-btn').disabled = true;
-
-        updateDisplay();
-        updateSessionInfo();
-        setStatus(`New session created (${gameId.substring(0, 8)}...). Place your bet and click Deal.`);
-    } catch (error) {
-        console.error('Error starting new game:', error);
-        setStatus('Error connecting to server: ' + error.message);
-    }
-}
-
-// Deal initial hands
-async function dealHand() {
-    if (gameState.currentBet === 0) {
-        setStatus('Please place a bet first.');
-        return;
-    }
-
-    if (gameState.currentBet > gameState.bank) {
-        setStatus('Insufficient funds!');
-        return;
-    }
-
-    // Create session if needed
-    if (!gameId) {
-        // Save the current bet before creating session (startNewGame resets state)
-        const savedBet = gameState.currentBet;
-        await startNewGame();
-        // Restore the bet after session creation
-        gameState.currentBet = savedBet;
-        updateDisplay();
-    }
-
-    // Optimistically update bank immediately for instant visual feedback
-    const betAmount = gameState.currentBet;
-    gameState.bank -= betAmount;
-    updateDisplay();
-
-    try {
-        // Call server API to deal
-        const response = await fetch(`/blackjack/api/${gameId}/deal`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                bet: betAmount
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Deal response:', data);
-
-        // Update game state from server (sync to actual values)
-        gameState.gameInProgress = true;
-        gameState.dealerTurn = false;
-        gameState.bank = data.bank;  // Sync to server's bank (should match our optimistic update)
-        gameState.winLoss = data.winLoss || 0;  // Sync win/loss from server
-
-        // Parse hands from server response
-        // Server returns hands as arrays of cards directly
-        gameState.playerHand = data.playerHand || [];
-        gameState.dealerHand = data.dealerHand || [];
-
-        updateDisplay();
-
-        // Check for blackjack (score 21)
-        const playerValue = calculateHandValue(gameState.playerHand);
-
-        if (playerValue === 21) {
-            // Auto-stand on blackjack
-            setTimeout(() => stand(), 1000);
-            return;
-        }
-
-        // Enable player actions
-        document.getElementById('hit-btn').disabled = false;
-        document.getElementById('stand-btn').disabled = false;
-        document.getElementById('deal-btn').disabled = true;
-
-        // Double down disabled - not implemented in UI
-        // if (gameState.bank >= gameState.currentBet) {
-        //     document.getElementById('double-btn').disabled = false;
-        // }
-
-        // Enable surrender
-        document.getElementById('surrender-btn').disabled = false;
-
-        // Enable split if player has matching cards and enough money
-        if (gameState.playerHand.length === 2 &&
-            gameState.playerHand[0].rank === gameState.playerHand[1].rank &&
-            gameState.bank >= gameState.currentBet) {
-            document.getElementById('split-btn').disabled = false;
-        }
-
-        setStatus(`Your turn. Score: ${playerValue}. Hit or Stand?`);
-
-    } catch (error) {
-        console.error('Error dealing:', error);
-        setStatus('Error dealing cards: ' + error.message);
-    }
-}
-
-// Disable special action buttons (double, split, surrender)
-function disableSpecialActions() {
-    document.getElementById('double-btn').disabled = true;
-    document.getElementById('split-btn').disabled = true;
-    document.getElementById('surrender-btn').disabled = true;
-}
-
-// Player hits
-async function hit() {
-    if (!gameState.gameInProgress || gameState.dealerTurn) {
-        return;
-    }
-
-    // Disable special actions after first hit
-    disableSpecialActions();
-
-    try {
-        // Call server API to hit
-        const response = await fetch(`/blackjack/api/${gameId}/hit`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
-        });
-
-        if (!response.ok) {
-            // Try to get error details from response
-            let errorMessage = `Server error: ${response.status}`;
-            try {
-                const errorData = await response.json();
-                console.error('Hit endpoint error response:', errorData);
-                if (errorData.error) {
-                    errorMessage = errorData.error;
+            ctx.beginPath();
+            trail.forEach((pos, j) => {
+                const canvasPos = this.simToCanvas(pos);
+                if (j === 0) {
+                    ctx.moveTo(canvasPos.x, canvasPos.y);
+                } else {
+                    ctx.lineTo(canvasPos.x, canvasPos.y);
                 }
-            } catch (e) {
-                console.error('Could not parse error response');
+            });
+
+            // Trail opacity fades from back to front
+            const alpha = 0.3;
+            ctx.strokeStyle = color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        });
+
+        // Draw bodies with glow effect
+        this.bodies.forEach((body, i) => {
+            const canvasPos = this.simToCanvas(body.pos);
+
+            // Glow
+            const gradient = ctx.createRadialGradient(
+                canvasPos.x, canvasPos.y, 0,
+                canvasPos.x, canvasPos.y, 20
+            );
+            gradient.addColorStop(0, body.color + 'ff');
+            gradient.addColorStop(0.5, body.color + '88');
+            gradient.addColorStop(1, body.color + '00');
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(canvasPos.x, canvasPos.y, 20, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Core
+            ctx.fillStyle = body.color;
+            ctx.beginPath();
+            ctx.arc(canvasPos.x, canvasPos.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Update UI
+        document.getElementById('time-display').textContent = `Time: ${this.time.toFixed(2)}`;
+        document.getElementById('step-display').textContent = `Steps: ${this.stepCount}`;
+    }
+
+    // Animation loop
+    animate() {
+        if (!this.isRunning) return;
+
+        // Run multiple physics steps per frame for speed
+        const stepsThisFrame = Math.floor(this.stepsPerFrame * this.speed);
+        for (let i = 0; i < stepsThisFrame; i++) {
+            this.eulerStep();
+        }
+
+        this.render();
+        this.animationId = requestAnimationFrame(() => this.animate());
+    }
+
+    play() {
+        if (this.isRunning) return;
+        this.isRunning = true;
+        this.sessionStatus = 'active';
+        document.getElementById('session-status').textContent = 'Running';
+        this.animate();
+    }
+
+    pause() {
+        this.isRunning = false;
+        this.sessionStatus = 'paused';
+        document.getElementById('session-status').textContent = 'Paused';
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+    }
+
+    reset() {
+        this.pause();
+        const presetId = document.getElementById('preset-select').value;
+        if (presetId !== 'custom') {
+            this.loadPreset(presetId);
+        } else {
+            this.time = 0;
+            this.stepCount = 0;
+            this.trails = [[], [], []];
+            this.applyCustomConfig();
+        }
+    }
+
+    // Save state to server
+    async saveState() {
+        try {
+            const stateData = {
+                bodies: this.bodies,
+                time: this.time,
+                stepCount: this.stepCount,
+                G: this.G,
+                dt: this.dt
+            };
+
+            // TODO: Implement server API call
+            // For now, just log to console and save to localStorage
+            console.log('Saving state:', stateData);
+            localStorage.setItem('three-body-state', JSON.stringify(stateData));
+
+            // Generate session ID if we don't have one
+            if (!this.sessionId) {
+                this.sessionId = this.generateUUID();
+                document.getElementById('session-id').textContent = this.sessionId;
             }
-            throw new Error(errorMessage);
+
+            alert('State saved successfully!');
+        } catch (error) {
+            console.error('Error saving state:', error);
+            alert('Failed to save state');
         }
-
-        const data = await response.json();
-        console.log('Hit response:', data);
-
-        // Update player hand and bank from server
-        gameState.playerHand = data.hand;
-        gameState.bank = data.bank;
-        gameState.winLoss = data.winLoss || 0;  // Sync win/loss from server
-        updateDisplay();
-
-        const playerValue = calculateHandValue(gameState.playerHand);
-
-        if (data.busted) {
-            // Bust - bank already updated from server, clear bet but keep hands visible
-
-            gameState.dealerTurn = true;
-            gameState.gameInProgress = false;
-            gameState.currentBet = 0;
-            updateDisplay();
-            setStatus('Player busts! Place your bet for the next hand.');
-
-            // Disable action buttons
-            document.getElementById('hit-btn').disabled = true;
-            document.getElementById('stand-btn').disabled = true;
-            document.getElementById('deal-btn').disabled = true;
-            disableSpecialActions();
-        } else if (playerValue === 21) {
-            // Auto-stand on 21
-            setTimeout(() => stand(), 500);
-        } else {
-            setStatus(`Score: ${playerValue}. Hit or Stand?`);
-        }
-
-    } catch (error) {
-        console.error('Error hitting:', error);
-        setStatus('Error hitting: ' + error.message);
-    }
-}
-
-// Player stands
-async function stand() {
-    if (!gameState.gameInProgress || gameState.dealerTurn) {
-        return;
     }
 
-    gameState.dealerTurn = true;
-
-    // Disable player actions
-    document.getElementById('hit-btn').disabled = true;
-    document.getElementById('stand-btn').disabled = true;
-    disableSpecialActions();
-
-    setStatus('Dealer\'s turn...');
-
-    try {
-        // Call server API to stand (dealer plays and resolves)
-        const response = await fetch(`/blackjack/api/${gameId}/stand`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
+    generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
         });
-
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Stand response:', data);
-
-        // Update dealer hand and bank from server
-        gameState.dealerHand = data.dealerHand;
-        gameState.bank = data.bank;
-        gameState.winLoss = data.winLoss || 0;  // Sync win/loss from server
-
-        updateDisplay();
-
-        // Display outcome
-        const outcomeMessage = data.outcome.charAt(0).toUpperCase() + data.outcome.slice(1);
-        setStatus(`${outcomeMessage}! Payout: ℕ${data.payout}. Place a bet to play again.`);
-
-        // Reset for next round - clear bet but keep hands visible
-        gameState.gameInProgress = false;
-        gameState.currentBet = 0;
-        // DON'T clear hands - they stay visible until next bet is placed
-
-        // Disable action buttons
-        document.getElementById('deal-btn').disabled = true;
-        document.getElementById('hit-btn').disabled = true;
-        document.getElementById('stand-btn').disabled = true;
-        disableSpecialActions();
-
-        // Update display to clear bet chips (cards remain visible)
-        updateDisplay();
-
-    } catch (error) {
-        console.error('Error standing:', error);
-        setStatus('Error standing: ' + error.message);
     }
 }
 
-// Player cashes out (placeholder for future implementation)
-function cashOut() {
-    setStatus('Cash Out feature coming soon!');
-}
-
-// Player doubles down
-async function doubleDown() {
-    if (!gameState.gameInProgress || gameState.dealerTurn) {
-        return;
-    }
-
-    // Check if player has enough money
-    if (gameState.bank < gameState.currentBet) {
-        setStatus('Insufficient funds to double down!');
-        return;
-    }
-
-    // Disable all action buttons
-    disableSpecialActions();
-    document.getElementById('hit-btn').disabled = true;
-    document.getElementById('stand-btn').disabled = true;
-
-    setStatus('Doubling down...');
-
-    try {
-        // Call server API to double down
-        const response = await fetch(`/blackjack/api/${gameId}/double`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
-        });
-
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Double down response:', data);
-
-        // Update game state from server
-        gameState.playerHand = data.playerHand || gameState.playerHand;
-        gameState.dealerHand = data.dealerHand;
-        gameState.bank = data.bank;
-        gameState.winLoss = data.winLoss || 0;  // Sync win/loss from server
-
-        updateDisplay();
-
-        // Display outcome
-        const outcomeMessage = data.outcome.charAt(0).toUpperCase() + data.outcome.slice(1);
-        setStatus(`Doubled down! ${outcomeMessage}! Payout: ℕ${data.payout}. Place a bet to play again.`);
-
-        // Reset for next round - clear bet but keep hands visible
-        gameState.gameInProgress = false;
-        gameState.currentBet = 0;
-        // DON'T clear hands - they stay visible until next bet is placed
-
-        // Disable action buttons
-        document.getElementById('deal-btn').disabled = true;
-        document.getElementById('hit-btn').disabled = true;
-        document.getElementById('stand-btn').disabled = true;
-        disableSpecialActions();
-
-        // Update display to clear bet chips (cards remain visible)
-        updateDisplay();
-
-    } catch (error) {
-        console.error('Error doubling down:', error);
-        setStatus('Error doubling down: ' + error.message);
-    }
-}
-
-// Player splits (basic implementation for same-rank cards)
-function split() {
-    if (!gameState.gameInProgress || gameState.dealerTurn) {
-        return;
-    }
-
-    // Check if split is valid
-    if (gameState.playerHand.length !== 2 ||
-        gameState.playerHand[0].rank !== gameState.playerHand[1].rank) {
-        setStatus('Cannot split - need two cards of same rank!');
-        return;
-    }
-
-    // Check if player has enough money
-    if (gameState.bank < gameState.currentBet) {
-        setStatus('Insufficient funds to split!');
-        return;
-    }
-
-    // For now, just show a message that split is not fully implemented
-    // Full implementation would require tracking multiple hands
-    setStatus('Split feature coming soon! (Requires multi-hand support)');
-    disableSpecialActions();
-}
-
-// Player surrenders
-async function surrender() {
-    if (!gameState.gameInProgress || gameState.dealerTurn) {
-        return;
-    }
-
-    // Disable all action buttons
-    disableSpecialActions();
-    document.getElementById('hit-btn').disabled = true;
-    document.getElementById('stand-btn').disabled = true;
-
-    gameState.dealerTurn = true;
-    setStatus('Surrendering...');
-
-    try {
-        // Call server API to surrender
-        const response = await fetch(`/blackjack/api/${gameId}/surrender`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
-        });
-
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Surrender response:', data);
-
-        // Update game state from server
-        gameState.bank = data.bank;
-        gameState.winLoss = data.winLoss || 0;
-        gameState.currentBet = 0;
-        gameState.gameInProgress = false;
-
-        updateDisplay();
-        setStatus(`Surrendered. Payout: ℕ${data.payout}. Place a bet to play again.`);
-
-        // Disable action buttons
-        document.getElementById('deal-btn').disabled = true;
-        document.getElementById('hit-btn').disabled = true;
-        document.getElementById('stand-btn').disabled = true;
-        disableSpecialActions();
-
-    } catch (error) {
-        console.error('Error surrendering:', error);
-        setStatus('Error surrendering: ' + error.message);
-    }
-}
-
-// Dealer plays according to rules
-function playDealerHand() {
-    const dealerValue = calculateHandValue(gameState.dealerHand);
-
-    if (dealerValue < 17) {
-        // Dealer must hit
-        gameState.dealerHand.push(gameState.deck.pop());
-        updateDisplay();
-        setTimeout(playDealerHand, 1000);
-    } else if (dealerValue > 21) {
-        // Dealer busts
-        resolveWin('Dealer busts! You win!');
-    } else {
-        // Compare hands
-        const playerValue = calculateHandValue(gameState.playerHand);
-
-        if (playerValue > dealerValue) {
-            resolveWin('You win!');
-        } else if (playerValue < dealerValue) {
-            resolveLoss('Dealer wins.');
-        } else {
-            resolvePush();
-        }
-    }
-}
-
-// Resolve player win
-function resolveWin(message) {
-    const winAmount = gameState.currentBet * 2;
-    gameState.bank += winAmount;
-    gameState.winLoss += gameState.currentBet;
-    endRound(message);
-}
-
-// Resolve blackjack (pays 3:2)
-function resolveBlackjack() {
-    const winAmount = Math.floor(gameState.currentBet * 2.5);
-    gameState.bank += winAmount;
-    gameState.winLoss += Math.floor(gameState.currentBet * 1.5);
-    endRound('Blackjack! You win!');
-}
-
-// Resolve push (tie)
-function resolvePush() {
-    gameState.bank += gameState.currentBet;
-    endRound('Push (tie).');
-}
-
-// Resolve player loss
-function resolveLoss(message) {
-    gameState.winLoss -= gameState.currentBet;
-    endRound(message);
-}
-
-// End the current round
-function endRound(message) {
-    gameState.gameInProgress = false;
-    gameState.currentBet = 0;  // Clear bet visually
-    // DON'T clear hands - they stay visible until next bet is placed
-
-    document.getElementById('hit-btn').disabled = true;
-    document.getElementById('stand-btn').disabled = true;
-    document.getElementById('double-btn').disabled = true;
-    document.getElementById('split-btn').disabled = true;
-    document.getElementById('surrender-btn').disabled = true;
-    document.getElementById('deal-btn').disabled = true;
-
-    updateDisplay();
-    setStatus(message + ' Place your bet for the next hand.');
-
-    // Check if player has enough money to continue
-    if (gameState.bank < 1) {
-        setStatus(message + ' Game over! You\'re out of money. Click New Game to restart.');
-    }
-}
-
-// Set status message
-function setStatus(message) {
-    document.getElementById('status-message').textContent = message;
-}
-
-// Update session info display
-function updateSessionInfo() {
-    const sessionInfoEl = document.getElementById('session-info');
-    if (gameId) {
-        sessionInfoEl.textContent = `Session: ${gameId.substring(0, 12)}...`;
-    } else {
-        sessionInfoEl.textContent = '';
-    }
-}
-
-// Initialize on page load
-window.addEventListener('DOMContentLoaded', initGame);
+// Initialize simulation when page loads
+let simulation;
+document.addEventListener('DOMContentLoaded', () => {
+    simulation = new ThreeBodySimulation('simulation-canvas');
+});

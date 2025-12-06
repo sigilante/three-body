@@ -1,4 +1,5 @@
 ::  three-body/lib/three-body.hoon
+::  Data structures and physics for three-body simulation
 ::
 /+  txt=types
 ::
@@ -9,256 +10,416 @@
 /=  txt           /apps/tx/lib/types
 /=  wt            /apps/wallet/lib/types
 ::
-::  blackjack/sur/blackjack.hoon
-::  Data structures for blackjack game
+::  three-body/lib/three-body.hoon
+::  Physics simulation types and functions
 ::
 =>
 |%
-::  Card suits and ranks
-+$  suit  ?(%hearts %diamonds %clubs %spades)
-+$  rank  ?(%'A' %'2' %'3' %'4' %'5' %'6' %'7' %'8' %'9' %'10' %'J' %'Q' %'K')
-::
-::  Card structure
-+$  card  [=suit =rank]
-::
-::  Hand of cards
-+$  hand  (list card)  :: could plausibly be a (set card)
-::
-::  Session and game state
-+$  game-id  @t  :: UUID-style identifier
-+$  session-id  @ud  :: Old style, kept for compatibility
-::
-+$  bet-status
-  $?  %pending      :: Transaction submitted, waiting for confirmations
-      %confirmed    :: Transaction has required confirmations
-      %failed       :: Transaction failed or invalid
+::  Vector in 2D space (using signed decimals for position/velocity)
++$  vec2
+  $:  x=@rs  :: x-coordinate (single-precision float)
+      y=@rs  :: y-coordinate
   ==
+::
+::  Body/particle in the simulation
++$  body
+  $:  pos=vec2        :: position
+      vel=vec2        :: velocity
+      mass=@rs        :: mass
+      color=@t        :: color for visualization (hex color like "ff0000")
+  ==
+::
+::  Simulation configuration
++$  sim-config
+  $:  gravitational-constant=@rs    :: G constant (default: .sun:rs)
+      timestep=@rs                  :: dt for integration
+      max-trail-length=@ud          :: max points in trail history
+      integration-method=?(%euler %rk4)  :: integration method
+  ==
+::
+::  Simulation state
++$  sim-state
+  $:  bodies=(list body)            :: the three bodies
+      time=@rs                      :: current simulation time
+      step-count=@ud                :: number of steps taken
+      config=sim-config             :: simulation parameters
+      trails=(list (list vec2))     :: position history for each body
+  ==
+::
+::  Preset initial conditions (from Observable notebook)
++$  preset-id  ?(%figure-eight %butterfly %moth %dragonfly %yarn %goggles)
+::
+::  Session and simulation state
++$  game-id  @t  :: UUID-style identifier
 ::
 +$  session-status
-  $?  %awaiting-bet    :: Session created, waiting for bet transaction
-      %bet-pending     :: Bet transaction seen, waiting for confirmations
-      %active          :: Bet confirmed, game in progress
-      %ended           :: Game ended, waiting for payout
-      %paid-out        :: Payout transaction broadcast
+  $?  %active          :: Simulation running
+      %paused          :: Simulation paused
+      %ended           :: Session ended
       %closed          :: Session closed
-  ==
-::
-+$  hand-history
-  $:  bet=@ud
-      player-hand=hand
-      dealer-hand=hand
-      outcome=?(%win %loss %push %blackjack)
-      payout=@ud
-      bank-after=@ud            :: Bank balance after this hand
-      timestamp=@da
   ==
 ::
 +$  session-state
   $:  game-id=@t
-      player-pkh=(unit @t)        :: Player's public key hash
-      bet-tx-hash=(unit @t)       :: Transaction hash of initial bet
-      bet-status=bet-status       :: Status of bet transaction
-      confirmed-amount=@ud        :: Amount confirmed on-chain (0 if pending)
-      cashout-tx-hash=(unit @t)   :: Transaction hash of cashout (if any)
-      game=game-state-inner       :: Actual game state
+      simulation=sim-state          :: Current simulation state
+      preset=(unit preset-id)       :: Which preset is loaded, if any
       created=@da
       last-activity=@da
       status=session-status
-      history=(list hand-history) :: Last N hands played
+      save-interval=@ud             :: Save state every N steps
+      last-saved-step=@ud           :: Last step that was saved
   ==
-::
-+$  game-state-inner
-  $:  deck=(list card)
-      player-hand=(list hand)  :: list for splitting hands
-      dealer-hand=(list hand)
-      bank=@ud
-      current-bet=@ud
-      win-loss=@sd
-      deals-made=@ud           :: Track number of deals
-      game-in-progress=?
-      dealer-turn=?
-  ==
-::
-:: Old game-state type for backward compatibility
-+$  game-state  game-state-inner
 ::
 +$  server-config
   $:  wallet-pkh=@t                :: Server's PKH from config
       confirmation-blocks=@ud      :: Required confirmations (typically 3)
       enable-blockchain=?          :: Toggle blockchain integration
-      initial-bank=@ud             :: Initial bank for new sessions (default 1000)
       max-history-entries=@ud      :: Maximum history entries to keep (default 20)
   ==
 ::
 ::  Runtime server configuration (includes keys and notes)
-::  This gets poked in from Rust driver on startup
 +$  runtime-config
   $:  wallet-pkh=@t                        :: Server's wallet PKH
       private-key=(unit @t)                :: Server's private key (base58)
       confirmation-blocks=@ud              :: Required confirmations
       enable-blockchain=?                  :: Blockchain integration enabled
-      initial-bank=@ud                     :: Initial bank amount
       max-history-entries=@ud              :: Max history entries
       notes=(map @t *)                     :: Server's UTXOs (note name -> note data)
   ==
 --
-::  Game mechanics
+::  Physics and math functions
 |%
-::  Create a fresh 52-card deck in standard new-deck order (NDO), no jokers
-++  create-deck
-  ^-  (list card)
-  =/  deck=(list card)  ~
-  =/  suits=(list suit)  ~[%spades %diamonds %clubs %hearts]
-  =/  ranks=(list rank)  ~[%'A' %'2' %'3' %'4' %'5' %'6' %'7' %'8' %'9' %'10' %'J' %'Q' %'K']
-  ::
-  |-  ^-  (list card)
-  ?~  suits  deck
-  =/  current-suit=suit  i.suits
-  =/  suit-cards=(list card)
-    %+  turn  ranks
-    |=(r=rank [suit=current-suit rank=r])
-  $(suits t.suits, deck (weld deck suit-cards))
+::  Vector operations
+++  vec2-add
+  |=  [a=vec2 b=vec2]
+  ^-  vec2
+  [x=(add:rs x.a x.b) y=(add:rs y.a y.b)]
 ::
-::  Shuffle deck
-++  shuffle-deck
-  |=  [deck=(list card) eny=@uvJ]
-  ^-  (list card)
-  =/  n  (lent deck)
-  =/  remaining=(list card)  deck
-  =/  shuffled=(list card)  ~
-  =/  rng  ~(. tog:tip5:ztd (reap 16 eny))
-  |-  ^-  (list card)
-  ?:  =(~ remaining)  shuffled
-  =/  len=@ud  (lent remaining)
-  ?:  =(len 1)  (weld shuffled remaining)
-  =^  index=@  rng  (index:rng (lent remaining))
-  =/  chosen=card  (snag index remaining)
-  =/  new-remaining=(list card)
-    (weld (scag index remaining) (slag +(index) remaining))
-  $(remaining new-remaining, shuffled `(list card)`[chosen shuffled])
+++  vec2-sub
+  |=  [a=vec2 b=vec2]
+  ^-  vec2
+  [x=(sub:rs x.a x.b) y=(sub:rs y.a y.b)]
 ::
-::  Calculate hand value (handle aces)
-++  calculate-hand-value
-  |=  h=hand
-  ^-  [@ud @ud]
-  =/  value=@ud  0
-  =/  aces=@ud  0
-  ::
-  ::  First pass: sum all values, count aces
-  =/  cards=hand  h
-  |-  ^-  [@ud @ud]
-  ?~  cards  [value aces]
-  =/  c=card  i.cards
-  =/  rank-value=@ud
-    ?-  rank.c
-      %'A'   1
-      %'2'   2
-      %'3'   3
-      %'4'   4
-      %'5'   5
-      %'6'   6
-      %'7'   7
-      %'8'   8
-      %'9'   9
-      %'10'  10
-      %'J'   10
-      %'Q'   10
-      %'K'   10
-    ==
-  ?:  =(%'A' rank.c)
-    $(cards t.cards, value (add value 11), aces +(aces))
-  $(cards t.cards, value (add value rank-value))
+++  vec2-mul
+  |=  [v=vec2 s=@rs]
+  ^-  vec2
+  [x=(mul:rs x.v s) y=(mul:rs y.v s)]
 ::
-::  Second pass: adjust aces if needed
-++  adjust-aces
-  |=  [value=@ud aces=@ud]
-  ^-  @ud
-  |-  ^-  @ud
-  ?:  (lte value 21)  value
-  ?:  =(aces 0)  value
-  $(value (sub value 10), aces (dec aces))
+++  vec2-div
+  |=  [v=vec2 s=@rs]
+  ^-  vec2
+  [x=(div:rs x.v s) y=(div:rs y.v s)]
 ::
-::  Calculate hand value (exported version)
-++  hand-value
-  |=  h=hand
-  ^-  @ud
-  =+  [value aces]=(calculate-hand-value h)
-  (adjust-aces value aces)
+++  vec2-mag-squared
+  |=  v=vec2
+  ^-  @rs
+  (add:rs (mul:rs x.v x.v) (mul:rs y.v y.v))
 ::
-::  Check if hand is busted
-++  is-busted
-  |=  h=hand
-  ^-  ?
-  (gth (hand-value h) 21)
+++  vec2-mag
+  |=  v=vec2
+  ^-  @rs
+  (sqt:rs (vec2-mag-squared v))
 ::
-::  Check if hand is blackjack (21 with 2 cards)
-++  is-blackjack
-  |=  h=hand
-  ^-  ?
-  ?&  =(2 (lent h))
-      =(21 (hand-value h))
+::  Calculate gravitational force on body i due to body j
+::  Returns acceleration vector
+++  calc-acceleration
+  |=  [body-i=body body-j=body g-const=@rs]
+  ^-  vec2
+  =/  r=vec2  (vec2-sub pos.body-j pos.body-i)
+  =/  dist-sq=@rs  (vec2-mag-squared r)
+  =/  dist=@rs  (sqt:rs dist-sq)
+  ::  Prevent division by zero with softening parameter
+  =/  softening=@rs  .1e-2
+  =/  softened-dist-sq=@rs  (add:rs dist-sq (mul:rs softening softening))
+  ::  F = G * m_j / r^2, but we want acceleration a = F/m_i = G * m_j / r^2
+  =/  force-mag=@rs
+    (div:rs (mul:rs g-const mass.body-j) softened-dist-sq)
+  ::  Direction: r / |r|
+  =/  dir=vec2  (vec2-div r dist)
+  ::  a = force_mag * direction
+  (vec2-mul dir force-mag)
+::
+::  Calculate total acceleration on one body from all others
+++  calc-total-acceleration
+  |=  [bodies=(list body) idx=@ud g-const=@rs]
+  ^-  vec2
+  =/  target=body  (snag idx bodies)
+  =/  acc=vec2  [x=.0 y=.0]
+  =/  i=@ud  0
+  |-
+  ?:  (gte i (lent bodies))
+    acc
+  ?:  =(i idx)
+    $(i +(i))
+  =/  other=body  (snag i bodies)
+  =/  da=vec2  (calc-acceleration target other g-const)
+  $(i +(i), acc (vec2-add acc da))
+::
+::  Euler integration step
+++  euler-step
+  |=  [state=sim-state]
+  ^-  sim-state
+  =/  dt=@rs  timestep.config.state
+  =/  g=@rs  gravitational-constant.config.state
+  ::  Calculate accelerations for all bodies
+  =/  accelerations=(list vec2)
+    %+  turn  (gulf 0 (dec (lent bodies.state)))
+    |=(i=@ud (calc-total-acceleration bodies.state i g))
+  ::  Update velocities and positions
+  =/  new-bodies=(list body)
+    %+  turn  (zip:rlying bodies.state accelerations)
+    |=  [b=body acc=vec2]
+    ^-  body
+    =/  new-vel=vec2
+      (vec2-add vel.b (vec2-mul acc dt))
+    =/  new-pos=vec2
+      (vec2-add pos.b (vec2-mul new-vel dt))
+    b(vel new-vel, pos new-pos)
+  ::  Update trails
+  =/  new-trails=(list (list vec2))
+    %+  turn  new-bodies
+    |=  b=body
+    ^-  (list vec2)
+    (scag max-trail-length.config.state ~[pos.b])
+  ::  Return updated state
+  :*  bodies=new-bodies
+      time=(add:rs time.state dt)
+      step-count=+(step-count.state)
+      config=config.state
+      trails=new-trails
   ==
 ::
-::  Dealer should hit (< 17)
-++  dealer-should-hit
-  |=  h=hand
-  ^-  ?
-  (lth (hand-value h) 17)
+::  RK4 integration (4th order Runge-Kutta) - more accurate
+++  rk4-step
+  |=  [state=sim-state]
+  ^-  sim-state
+  ::  For now, fall back to Euler (RK4 implementation is complex in Hoon)
+  ::  TODO: Implement full RK4
+  (euler-step state)
 ::
-::  Deal initial hands (2 cards each)
-++  deal-initial
-  |=  deck=(list card)
-  ^-  [(list hand) (list hand) (list card)]
-  =/  player-card-1=card  (snag 0 deck)
-  =/  dealer-card-1=card  (snag 1 deck)
-  =/  player-card-2=card  (snag 2 deck)
-  =/  dealer-card-2=card  (snag 3 deck)
-  =/  player-hand=hand  ~[player-card-1 player-card-2]
-  =/  dealer-hand=hand  ~[dealer-card-1 dealer-card-2]
-  =/  remaining-deck=(list card)  (slag 4 deck)
-  [~[player-hand] ~[dealer-hand] remaining-deck]
+::  Perform integration step based on configured method
+++  integration-step
+  |=  state=sim-state
+  ^-  sim-state
+  ?-  integration-method.config.state
+    %euler  (euler-step state)
+    %rk4    (rk4-step state)
+  ==
 ::
-::  Draw one card (and remove it from the deck)
-++  draw-card
-  |=  deck=(list card)
-  ^-  [card (list card)]
-  [(snag 0 deck) (slag 1 deck)]
+::  Helper function to zip two lists (standard library may have this)
+++  zip
+  |*  [a=(list) b=(list)]
+  ^-  (list [* *])
+  ?~  a  ~
+  ?~  b  ~
+  [[i.a i.b] $(a t.a, b t.b)]
 ::
-::  Resolve game outcome
-::  Returns: [outcome-type payout-multiplier]
-::  outcome-type: %win %loss %push %blackjack
-::  payout-multiplier: 0=loss, 1=push, 2=win, 2.5=blackjack
-++  resolve-outcome
-  |=  [player-hand=hand dealer-hand=hand]
-  ^-  [?(%win %loss %push %blackjack) @ud]
-  =/  player-value=@ud  (hand-value player-hand)
-  =/  dealer-value=@ud  (hand-value dealer-hand)
-  =/  player-bj=?  (is-blackjack player-hand)
-  =/  dealer-bj=?  (is-blackjack dealer-hand)
-  ::
-  ::  Player busted
-  ?:  (gth player-value 21)
-    [%loss 0]
-  ::
-  ::  Blackjacks
-  ?:  player-bj
-    ?:  dealer-bj
-      [%push 1]
-    [%blackjack 5]  ::  Returns 2.5x (bet + 1.5x bet = 2.5x bet)
-  ::
-  ::  Dealer busted
-  ?:  (gth dealer-value 21)
-    [%win 2]
-  ::
-  ::  Compare values
-  ?:  (gth player-value dealer-value)
-    [%win 2]
-  ?:  (lth player-value dealer-value)
-    [%loss 0]
-  [%push 1]
+::  Helper to create rlying (for zip to work with our types)
+++  rlying
+  |%
+  ++  zip
+    |*  [a=(list) b=(list)]
+    ^-  (list [* *])
+    ?~  a  ~
+    ?~  b  ~
+    [[i.a i.b] $(a t.a, b t.b)]
+  --
 ::
+::  Preset initial conditions
+::  Figure-8 orbit (Chenciner-Montgomery solution)
+++  preset-figure-eight
+  ^-  sim-state
+  :*  bodies=~
+        :*  pos=[x=.~0.97000436 y=.~-0.24308753]
+            vel=[x=.~0.466203685 y=.~0.43236573]
+            mass=.1
+            color='ff0000'
+        ==
+        :*  pos=[x=.~-0.97000436 y=.~0.24308753]
+            vel=[x=.~0.466203685 y=.~0.43236573]
+            mass=.1
+            color='00ff00'
+        ==
+        :*  pos=[x=.0 y=.0]
+            vel=[x=.~-0.93240737 y=.~-0.86473146]
+            mass=.1
+            color='0000ff'
+        ==
+      ==
+      time=.0
+      step-count=0
+      config=:*  gravitational-constant=.1
+                 timestep=.~0.001
+                 max-trail-length=500
+                 integration-method=%euler
+             ==
+      trails=~[~ ~ ~]
+  ==
 ::
-::  JSON parsing helpers
+::  Random initial conditions
+++  random-initial-state
+  |=  ent=@
+  ^-  sim-state
+  ::  Use entropy to generate random positions/velocities
+  ::  For now, return a simple default
+  preset-figure-eight
+::
+::  Helper function to find substring in string
+++  find
+  |=  [nedl=tape hstk=tape]
+  ^-  (unit @ud)
+  =|  pos=@ud
+  |-
+  ?~  hstk  ~
+  ::  Check if needle matches at current position
+  =/  match=?
+    |-  ^-  ?
+    ?~  nedl  %.y
+    ?~  hstk  %.n
+    ?.  =(i.nedl i.hstk)  %.n
+    $(nedl t.nedl, hstk t.hstk)
+  ?:  match  `pos
+  $(hstk t.hstk, pos +(pos))
+::
+::  JSON encoding helpers
+++  vec2-to-json
+  |=  v=vec2
+  ^-  tape
+  ;:  weld
+    "\{\"x\":"
+    (r-co:co (rlys (san:rs x.v)))
+    ",\"y\":"
+    (r-co:co (rlys (san:rs y.v)))
+    "}"
+  ==
+::
+++  body-to-json
+  |=  b=body
+  ^-  tape
+  ;:  weld
+    "\{\"pos\":"
+    (vec2-to-json pos.b)
+    ",\"vel\":"
+    (vec2-to-json vel.b)
+    ",\"mass\":"
+    (r-co:co (rlys (san:rs mass.b)))
+    ",\"color\":\""
+    (trip color.b)
+    "\"}"
+  ==
+::
+++  bodies-to-json
+  |=  bodies=(list body)
+  ^-  tape
+  ?~  bodies
+    "[]"
+  =/  json-items=(list tape)
+    (turn bodies body-to-json)
+  ;:  weld
+    "["
+    (join-tapes json-items ",")
+    "]"
+  ==
+::
+++  sim-state-to-json
+  |=  state=sim-state
+  ^-  tape
+  ;:  weld
+    "\{\"bodies\":"
+    (bodies-to-json bodies.state)
+    ",\"time\":"
+    (r-co:co (rlys (san:rs time.state)))
+    ",\"stepCount\":"
+    (a-co:co step-count.state)
+    "}"
+  ==
+::
+++  join-tapes
+  |=  [items=(list tape) separator=tape]
+  ^-  tape
+  ?~  items  ""
+  ?~  t.items  i.items
+  ;:  weld
+    i.items
+    separator
+    $(items t.items)
+  ==
+::
+::  Session management helpers
+++  generate-uuid
+  |=  ent=@
+  ^-  @t
+  ::  Generate UUID-style identifier using entropy
+  =/  hex=tape  (scow %ux ent)
+  =/  uuid=tape
+    ;:  weld
+      (scag 8 hex)
+      "-"
+      (scag 4 (slag 8 hex))
+      "-"
+      (scag 12 (slag 12 hex))
+    ==
+  (crip uuid)
+::
+++  make-json-session-created
+  |=  [game-id=@t state=sim-state]
+  ^-  tape
+  ;:  weld
+    "\{\"gameId\":\""
+    (trip game-id)
+    "\",\"initialState\":"
+    (sim-state-to-json state)
+    "}"
+  ==
+::
+++  make-json-session-status
+  |=  [game-id=@t status=session-status state=sim-state]
+  ^-  tape
+  ;:  weld
+    "\{\"gameId\":\""
+    (trip game-id)
+    "\",\"status\":\""
+    (scow %tas status)
+    "\",\"state\":"
+    (sim-state-to-json state)
+    "}"
+  ==
+::
+++  make-json-error
+  |=  [code=@ud message=tape]
+  ^-  tape
+  ;:  weld
+    "\{\"error\":\""
+    message
+    "\",\"code\":"
+    (a-co:co code)
+    "}"
+  ==
+::
+++  make-json-sessions-list
+  |=  sessions=(list [game-id=@t status=session-status step-count=@ud])
+  ^-  tape
+  ?~  sessions
+    "\{\"sessions\":[]}"
+  =/  session-jsons=(list tape)
+    %+  turn  sessions
+    |=  [game-id=@t status=session-status step-count=@ud]
+    ^-  tape
+    ;:  weld
+      "\{\"gameId\":\""
+      (trip game-id)
+      "\",\"status\":\""
+      (scow %tas status)
+      "\",\"stepCount\":"
+      (a-co:co step-count)
+      "}"
+    ==
+  ;:  weld
+      "\{\"sessions\":["
+      (join-tapes session-jsons ",")
+      "]}"
+  ==
+::
 ++  parse-json-number
   |=  [key=tape json-text=tape]
   ^-  (unit @ud)
@@ -278,324 +439,6 @@
   ?~  digits  ~
   `(rash (crip digits) dem)
 ::
-::  JSON encoding helpers
-++  card-to-json
-  |=  c=card
-  ^-  tape
-  (weld "\{\"suit\":\"" (weld (scow %tas suit.c) (weld "\",\"rank\":\"" (weld (scow %tas rank.c) "\"}"))))
-::
-++  hand-to-json
-  |=  h=hand
-  ^-  tape
-  =/  cards-json=(list tape)
-    (turn h card-to-json)
-  (weld "[" (weld (roll cards-json |=([a=tape b=tape] ?~(b a (weld b (weld "," a))))) "]"))
-::
-++  make-json-new-game
-  |=  [sid=@ud bank=@ud]
-  ^-  tape
-  ;:  weld
-    "\{\"sessionId\":"
-    (a-co:co sid)
-    ",\"bank\":"
-    (a-co:co bank)
-    "}"
-  ==
-::
-++  make-json-deal
-  |=  [player=(list hand) dealer=(list hand) score=@ud visible=card sid=@ud bank=@ud win-loss=@sd]
-  ^-  tape
-  ;:  weld
-    "\{\"playerHand\":"
-    (roll (turn player hand-to-json) |=([a=tape b=tape] (weld b a)))
-    ",\"dealerHand\":"
-    (roll (turn dealer hand-to-json) |=([a=tape b=tape] (weld b a)))
-    ",\"playerScore\":"
-    (a-co:co score)
-    ",\"dealerVisibleCard\":"  :: TODO for each hand
-    (card-to-json visible)
-    ",\"sessionId\":"
-    (a-co:co sid)
-    ",\"bank\":"
-    (a-co:co bank)
-    ",\"winLoss\":"
-    (r-co:co (rlys (san:rs win-loss)))
-  "}"
-  ==
-::
-++  make-json-hit
-  |=  [new-card=card hand=hand score=@ud busted=? bank=@ud win-loss=@sd]
-  ^-  tape
-  ;:  weld
-    "\{\"newCard\":"
-    (card-to-json new-card)
-    ",\"hand\":"
-    (hand-to-json hand)
-    ",\"score\":"
-    (a-co:co score)
-    ",\"busted\":"
-    ?:(busted "true" "false")
-    ",\"bank\":"
-    (a-co:co bank)
-    ",\"winLoss\":"
-    (r-co:co (rlys (san:rs win-loss)))
-    "}"
-  ==
-::
-++  make-json-stand
-  |=  [dealer=hand score=@ud outcome=?(%win %loss %push %blackjack) payout=@ud bank=@ud win-loss=@sd]
-  ^-  tape
-  ;:  weld
-    "\{\"dealerHand\":"
-    (hand-to-json dealer)
-    ",\"dealerScore\":"
-    (a-co:co score)
-    ",\"outcome\":\""
-    (scow %tas outcome)
-    "\",\"payout\":"
-    (a-co:co payout)
-    ",\"bank\":"
-    (a-co:co bank)
-    ",\"winLoss\":"
-    (r-co:co (rlys (san:rs win-loss)))
-    "}"
-  ==
-::
-++  make-json-double
-  |=  [player=hand dealer=hand dealer-score=@ud outcome=?(%win %loss %push %blackjack) payout=@ud bank=@ud win-loss=@sd]
-  ^-  tape
-  ;:  weld
-    "\{\"playerHand\":"
-    (hand-to-json player)
-    ",\"dealerHand\":"
-    (hand-to-json dealer)
-    ",\"dealerScore\":"
-    (a-co:co dealer-score)
-    ",\"outcome\":\""
-    (scow %tas outcome)
-    "\",\"payout\":"
-    (a-co:co payout)
-    ",\"bank\":"
-    (a-co:co bank)
-    ",\"winLoss\":"
-    (r-co:co (rlys (san:rs win-loss)))
-    "}"
-  ==
-::
-::  Session management helpers
-++  generate-uuid
-  |=  ent=@
-  ^-  @t
-  ::  Generate UUID-style identifier using entropy
-  =/  hex=tape  (scow %ux ent)
-  =/  uuid=tape
-    ;:  weld
-      (scag 8 hex)
-      "-"
-      (scag 4 (slag 8 hex))
-      "-"
-      (scag 12 (slag 12 hex))
-    ==
-  (crip uuid)
-::
-++  initial-game-state
-  |=  initial-bank=@ud
-  ^-  game-state-inner
-  :*  deck=~
-      player-hand=~
-      dealer-hand=~
-      bank=initial-bank
-      current-bet=0
-      win-loss=--0
-      deals-made=0
-      game-in-progress=%.n
-      dealer-turn=%.n
-  ==
-::
-++  make-json-session-created
-  |=  [game-id=@t server-pkh=@t bank=@ud]
-  ^-  tape
-  ;:  weld
-    "\{\"gameId\":\""
-    (trip game-id)
-    "\",\"serverWalletPkh\":\""
-    (trip server-pkh)
-    "\",\"bank\":"
-    (a-co:co bank)
-    "}"
-  ==
-::
-++  make-json-session-status
-  |=  [game-id=@t status=session-status player-pkh=(unit @t) bank=@ud]
-  ^-  tape
-  ;:  weld
-    "\{\"gameId\":\""
-    (trip game-id)
-    "\",\"status\":\""
-    (scow %tas status)
-    "\",\"playerPkh\":"
-    ?~(player-pkh "null" (weld "\"" (weld (trip u.player-pkh) "\"")))
-    ",\"bank\":"
-    (a-co:co bank)
-    "}"
-  ==
-::
-++  make-json-error
-  |=  [code=@ud message=tape]
-  ^-  tape
-  ;:  weld
-    "\{\"error\":\""
-    message
-    "\",\"code\":"
-    (a-co:co code)
-    "}"
-  ==
-::
-++  append-to-history
-  |=  [new-entry=hand-history old-history=(list hand-history) max-entries=@ud]
-  ^-  (list hand-history)
-  ::  Prepend new entry and keep last N entries
-  (scag max-entries `(list hand-history)`[new-entry old-history])
-::
-++  validate-game-action
-  |=  [action=?(%hit %stand %double %deal %surrender) sess=session-state]
-  ^-  (unit tape)
-  ::  Returns error message if invalid, ~ if valid
-  =/  game=game-state-inner  game.sess
-  ?-  action
-    %deal
-      ?:  game-in-progress.game
-        `"Cannot deal while game is in progress"
-      ::  For now, allow dealing without blockchain confirmation
-      ::  This will be enforced when enable-blockchain=%.y
-      ~
-    %hit
-      ?:  |(=(%.n game-in-progress.game) dealer-turn.game)
-        `"Cannot hit - not player's turn"
-      ~
-    %stand
-      ?:  |(=(%.n game-in-progress.game) dealer-turn.game)
-        `"Cannot stand - not player's turn"
-      ~
-    %double
-      ?:  |(=(%.n game-in-progress.game) dealer-turn.game)
-        `"Cannot double - not player's turn"
-      ::  Check if player has exactly 2 cards (first turn only)
-      ?:  !=(2 (lent (snag 0 player-hand.game)))
-        `"Can only double on first two cards"
-      ~
-    %surrender
-      ?:  |(=(%.n game-in-progress.game) dealer-turn.game)
-        `"Cannot surrender - not player's turn"
-      ::  Check if player has exactly 2 cards (can only surrender on first turn)
-      ?:  !=(2 (lent (snag 0 player-hand.game)))
-        `"Can only surrender on first two cards"
-      ~
-  ==
-::
-++  hand-history-to-json
-  |=  hist=hand-history
-  ^-  tape
-  ;:  weld
-    "\{\"bet\":"
-    (a-co:co bet.hist)
-    ",\"playerHand\":"
-    (hand-to-json player-hand.hist)
-    ",\"dealerHand\":"
-    (hand-to-json dealer-hand.hist)
-    ",\"outcome\":\""
-    (scow %tas outcome.hist)
-    "\",\"payout\":"
-    (a-co:co payout.hist)
-    ",\"bankAfter\":"
-    (a-co:co bank-after.hist)
-    "}"
-  ==
-::
-++  history-list-to-json
-  |=  history=(list hand-history)
-  ^-  tape
-  ?~  history
-    "[]"
-  =/  json-items=(list tape)
-    %+  turn  history
-    |=(hist=hand-history (hand-history-to-json hist))
-    ;:  weld
-      "["
-      (join-tapes json-items ",")
-      "]"
-    ==
-::
-++  join-tapes
-  |=  [items=(list tape) separator=tape]
-  ^-  tape
-  ?~  items  ""
-  ?~  t.items  i.items
-  ;:  weld
-    i.items
-    separator
-    $(items t.items)
-  ==
-::
-++  make-json-sessions-list
-  |=  sessions=(list [game-id=@t status=session-status bank=@ud deals-made=@ud])
-  ^-  tape
-  ?~  sessions
-    "\{\"sessions\":[]}"
-  =/  session-jsons=(list tape)
-    %+  turn  sessions
-    |=  [game-id=@t status=session-status bank=@ud deals-made=@ud]
-    ^-  tape
-    ;:  weld
-      "\{\"gameId\":\""
-      (trip game-id)
-      "\",\"status\":\""
-      (scow %tas status)
-      "\",\"bank\":"
-      (a-co:co bank)
-      ",\"dealsMade\":"
-      (a-co:co deals-made)
-      "}"
-    ==
-  ;:  weld
-      "\{\"sessions\":["
-      (join-tapes session-jsons ",")
-      "]}"
-  ==
-::
-++  make-json-full-session
-  |=  sess=session-state
-  ^-  tape
-  ;:  weld
-    "\{\"gameId\":\""
-    (trip game-id.sess)
-    "\",\"status\":\""
-    (scow %tas status.sess)
-    "\",\"playerPkh\":"
-    ?~(player-pkh.sess "null" (weld "\"" (weld (trip u.player-pkh.sess) "\"")))
-    ",\"bank\":"
-    (a-co:co bank.game.sess)
-    ",\"currentBet\":"
-    (a-co:co current-bet.game.sess)
-    ",\"dealsMade\":"
-    (a-co:co deals-made.game.sess)
-    ",\"gameInProgress\":"
-    ?:(game-in-progress.game.sess "true" "false")
-    ",\"playerHand\":"
-    ?:(=(~ player-hand.game.sess) "[]" (hand-to-json (snag 0 player-hand.game.sess)))
-    ",\"dealerHand\":"
-    ?:(=(~ dealer-hand.game.sess) "[]" (hand-to-json (snag 0 dealer-hand.game.sess)))
-    ",\"dealerTurn\":"
-    ?:(dealer-turn.game.sess "true" "false")
-    ",\"history\":"
-    (history-list-to-json history.sess)
-    ",\"winLoss\":"
-    (r-co:co (rlys (san:rs win-loss.game.sess)))
-    ",\"cashoutTxHash\":"
-    ?~(cashout-tx-hash.sess "null" (weld "\"" (weld (trip u.cashout-tx-hash.sess) "\"")))
-    "}"
-  ==
-::
 ++  parse-json-text
   |=  [key=tape json-text=tape]
   ^-  (unit @t)
@@ -614,89 +457,16 @@
   ?~  text  ~
   `(crip text)
 ::
-++  make-cashout-tx-effect
-  |=  [src-pkh=@ src-privkey=@ trg-pkh=@ amount=@]
-  ^-  effect:txt
-  :*  %tx
-      %send
-      src-pkh=`@`src-pkh
-      src-privkey=`@`src-privkey
-      src-first-name=`*`(simple:v1:first-name:transact (from-b58:hash:transact src-pkh))
-      trg-pkh=`@`trg-pkh
-      amount=`@`amount
-  ==
-::
-++  make-json-cashout-tx
-  |=  [game-id=@t amount=@ud player-pkh=@t new-bank=@ud tx-ready=? tx-hash=(unit @t) error=(unit tape)]
-  ^-  tape
-  ?^  error
-    ::  Error response
-    ;:  weld
-      "\{\"success\":false,\"error\":\""
-      u.error
-      "\"}"
-    ==
-  ::  Success response
-  ;:  weld
-    "\{\"success\":true"
-    ",\"gameId\":\""
-    (trip game-id)
-    "\",\"amount\":"
-    (a-co:co amount)
-    ",\"playerPkh\":\""
-    (trip player-pkh)
-    "\",\"newBank\":"
-    (a-co:co new-bank)
-    ",\"txReady\":"
-    ?:(tx-ready "true" "false")
-    ?^  tx-hash
-      ;:  weld
-        ",\"txHash\":\""
-        (trip u.tx-hash)
-        "\""
-      ==
-    ""
-    ",\"message\":\""
-    ?:(tx-ready "Transaction built successfully - awaiting submission" "Transaction structure prepared")
-    "\"}"
-  ==
-::
-::  ++create-payout-effect: Create a transaction effect for cashout
-::  Takes config, player PKH, and amount; returns [%tx %send ...] effect
-::
-++  create-payout-effect
-  |=  [game-id=@t wallet-pkh=@t private-key=@t player-pkh=@t amount=@ud]
-  ^-  ?(effect:txt effect:wt)
-  ::  Convert server PKH from base58 to hash
-  =/  server-pkh-hash=hash:transact
-    (from-b58:hash:transact wallet-pkh)
-  ::  Calculate server's first-name for transactions
-  =/  server-first-name=hash:transact
-    (simple:v1:first-name:transact server-pkh-hash)
-  ::  Build the transaction effect (including game-id for response tracking)
-  ^-  ?(effect:txt effect:wt)
-  :*  %tx  %send
-      :: `@`game-id
-      `@`wallet-pkh
-      `@`private-key
-      `*`server-first-name
-      `@`player-pkh
-      `@`(scot %ud amount)
-  ==
-::
 +$  config-poke
   $:  %init-config
       wallet-pkh=@t
       private-key=@t
       confirmation-blocks=@ud
       enable-blockchain=?
-      initial-bank=@ud
       max-history=@ud
   ==
 ::
 ::  Causes returned by tx_driver
-::  NOTE: The tx_driver should include game-id context in the response
-::  so we can update the correct session
 +$  tx-driver-cause
   $%  [%born ~]
       [%tx-sent game-id=@t tx-hash=@t]
