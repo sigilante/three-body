@@ -10,13 +10,7 @@
 /*  index         %html   /app/site/index/html
 /*  style         %css    /app/site/style/css
 /*  game          %js     /app/site/game/js
-/*  sprites       %png    /app/site/sprites/png
-/*  watcher-html  %html   /app/site/watcher/html
-/*  watcher-js    %js     /app/site/watcher/js
-/*  watcher-css   %css    /app/site/watcher/css
-/*  wallet-html   %html   /app/site/wallet/html
-/*  wallet-js     %js     /app/site/wallet/js
-/*  wallet-css    %css    /app/site/wallet/css
+::  Removed missing asset references (watcher, wallet, sprites)
 ::  Application state
 =>
 |%
@@ -80,12 +74,12 @@
     =/  entropy=@  eny.input.ovum
     ::
     ::  Check if this is a config poke (non-HTTP)
-    =/  config-poke=(unit config-poke:blackjack)
-      ((soft config-poke:blackjack) cause.input.ovum)
+    =/  config-poke=(unit config-poke:three-body)
+      ((soft config-poke:three-body) cause.input.ovum)
     ?^  config-poke
       ::  Handle init-config poke
       ~&  >>  "Received init-config poke"
-      =/  new-config=runtime-config:blackjack
+      =/  new-config=runtime-config:three-body
         :*  wallet-pkh.u.config-poke
             `private-key.u.config-poke
             confirmation-blocks.u.config-poke
@@ -98,8 +92,8 @@
       [~ state(config `new-config)]
     ::
     ::  Check if this is a tx-driver response
-    =/  tx-response=(unit tx-driver-cause:blackjack)
-      ((soft tx-driver-cause:blackjack) cause.input.ovum)
+    =/  tx-response=(unit tx-driver-cause:three-body)
+      ((soft tx-driver-cause:three-body) cause.input.ovum)
     ?^  tx-response
       ::  Handle transaction driver response
       ~&  >>  "Received tx-driver response: {<u.tx-response>}"
@@ -112,13 +106,13 @@
         ::  Transaction successfully sent
         ~&  >>  "Transaction sent with hash: {<tx-hash.u.tx-response>} for game: {<game-id.u.tx-response>}"
         ::  Update session state with tx-hash
-        =/  game-id=game-id:blackjack  game-id.u.tx-response
-        =/  existing=(unit session-state:blackjack)  (~(get by sessions.state) game-id)
+        =/  game-id=game-id:three-body  game-id.u.tx-response
+        =/  existing=(unit session-state:three-body)  (~(get by sessions.state) game-id)
         ?~  existing
           ~&  >>>  "Session not found for tx-sent: {<game-id>}"
           [~ state]
         ::  Update session with tx-hash
-        =/  updated-session=session-state:blackjack
+        =/  updated-session=session-state:three-body
           u.existing(cashout-tx-hash `tx-hash.u.tx-response, last-activity now.input.ovum)
         ~&  >>  "Updated session {<game-id>} with tx-hash: {<tx-hash.u.tx-response>}"
         [~ state(sessions (~(put by sessions.state) game-id updated-session))]
@@ -132,15 +126,15 @@
       ==
     ::
     ::  Check if this is a balance update from the Rust driver
-    =/  update-bank-response=(unit update-bank-cause:blackjack)
-      ((soft update-bank-cause:blackjack) cause.input.ovum)
+    =/  update-bank-response=(unit update-bank-cause:three-body)
+      ((soft update-bank-cause:three-body) cause.input.ovum)
     ?^  update-bank-response
       ::  Update the bank in all active sessions
       =/  new-bank=@ud  p.u.update-bank-response
       ~&  >>  "Received balance update: new bank = {<new-bank>}"
       ::  Update config with new bank
-      =/  current-config=runtime-config:blackjack  (get-config state)
-      =/  updated-config=runtime-config:blackjack
+      =/  current-config=runtime-config:three-body  (get-config state)
+      =/  updated-config=runtime-config:three-body
         current-config(initial-bank new-bank)
       [~ state(config `updated-config)]
     ::
@@ -166,9 +160,9 @@
         ~&  >>>  "No route matched, returning 404 for: {<uri>}"
         [~[[%res ~ %404 ~ ~]] state]
         ::
-          :: Serve index.html at /blackjack
-          [%blackjack ~]
-        ~&  >>  "Matched route: /blackjack (index.html)"
+          :: Serve index.html at /three-body
+          [%three-body ~]
+        ~&  >>  "Matched route: /three-body (index.html)"
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -182,9 +176,9 @@
             (to-octs:http q.index)
         ==
         ::
-          :: Serve style.css at /blackjack/style.css
-          [%blackjack %'style.css' ~]
-        ~&  >>  "Matched route: /blackjack/style.css"
+          :: Serve style.css at /three-body/style.css
+          [%three-body %'style.css' ~]
+        ~&  >>  "Matched route: /three-body/style.css"
         ~&  >>  "CSS length: {<(met 3 q.style)>} bytes"
         :_  state
         ^-  (list effect:http)
@@ -199,9 +193,9 @@
             (to-octs:http q.style)
         ==
         ::
-          :: Serve game.js at /blackjack/game.js
-          [%blackjack %'game.js' ~]
-        ~&  >>  "Matched route: /blackjack/game.js"
+          :: Serve game.js at /three-body/game.js
+          [%three-body %'game.js' ~]
+        ~&  >>  "Matched route: /three-body/game.js"
         ~&  >>  "JS length: {<(met 3 q.game)>} bytes"
         :_  state
         ^-  (list effect:http)
@@ -216,9 +210,9 @@
             (to-octs:http q.game)
         ==
         ::
-          :: Serve sprites.png at /blackjack/img/sprites.png
-          [%blackjack %img %'sprites.png' ~]
-        ~&  >>  "Matched route: /blackjack/img/sprites.png"
+          :: Serve sprites.png at /three-body/img/sprites.png
+          [%three-body %img %'sprites.png' ~]
+        ~&  >>  "Matched route: /three-body/img/sprites.png"
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -233,8 +227,8 @@
         ==
         ::
           :: Serve watcher.html
-          [%blackjack %'watcher.html' ~]
-        ~&  >>  "Matched route: /blackjack/watcher.html"
+          [%three-body %'watcher.html' ~]
+        ~&  >>  "Matched route: /three-body/watcher.html"
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -247,8 +241,8 @@
         ==
         ::
           :: Serve watcher.js
-          [%blackjack %'watcher.js' ~]
-        ~&  >>  "Matched route: /blackjack/watcher.js"
+          [%three-body %'watcher.js' ~]
+        ~&  >>  "Matched route: /three-body/watcher.js"
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -261,8 +255,8 @@
         ==
         ::
           :: Serve watcher.css
-          [%blackjack %'watcher.css' ~]
-        ~&  >>  "Matched route: /blackjack/watcher.css"
+          [%three-body %'watcher.css' ~]
+        ~&  >>  "Matched route: /three-body/watcher.css"
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -275,8 +269,8 @@
         ==
         ::
           :: Serve wallet.html
-          [%blackjack %'wallet.html' ~]
-        ~&  >>  "Matched route: /blackjack/wallet.html"
+          [%three-body %'wallet.html' ~]
+        ~&  >>  "Matched route: /three-body/wallet.html"
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -289,8 +283,8 @@
         ==
         ::
           :: Serve wallet.js
-          [%blackjack %'wallet.js' ~]
-        ~&  >>  "Matched route: /blackjack/wallet.js"
+          [%three-body %'wallet.js' ~]
+        ~&  >>  "Matched route: /three-body/wallet.js"
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -303,8 +297,8 @@
         ==
         ::
           :: Serve wallet.css
-          [%blackjack %'wallet.css' ~]
-        ~&  >>  "Matched route: /blackjack/wallet.css"
+          [%three-body %'wallet.css' ~]
+        ~&  >>  "Matched route: /three-body/wallet.css"
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -317,19 +311,19 @@
         ==
         ::
           :: GET /api/sessions - List all active sessions
-          [%blackjack %api %sessions ~]
-        ~&  >>  "Matched route: GET /blackjack/api/sessions"
+          [%three-body %api %sessions ~]
+        ~&  >>  "Matched route: GET /three-body/api/sessions"
         ~&  >>>  "Total sessions in state: {<~(wyt by sessions.state)>}"
         ::  Extract session info from all sessions
         ~&  >  sessions+[~(tap by sessions.state)]
-        =/  session-list=(list [game-id=@t status=session-status:blackjack bank=@ud deals-made=@ud])
+        =/  session-list=(list [game-id=@t status=session-status:three-body bank=@ud deals-made=@ud])
           %+  turn  ~(tap by sessions.state)
-          |=  [gid=@t sess=session-state:blackjack]
-          ^-  [game-id=@t status=session-status:blackjack bank=@ud deals-made=@ud]
+          |=  [gid=@t sess=session-state:three-body]
+          ^-  [game-id=@t status=session-status:three-body bank=@ud deals-made=@ud]
           [gid status.sess bank.game.sess deals-made.game.sess]
         ~&  >>>  "Session list length: {<(lent session-list)>}"
         =/  json=tape
-          (make-json-sessions-list:blackjack session-list)
+          (make-json-sessions-list:three-body session-list)
         ~&  >>>  "JSON response: {<json>}"
         :_  state
         ^-  (list effect:http)
@@ -343,19 +337,19 @@
         ==
         ::
           :: GET /api/{game-id}/status - Get full session state
-          [%blackjack %api game-id:blackjack %status ~]
-        =/  =game-id:blackjack  (snag 2 `path`uri)
-        ~&  >>  "Matched route: GET /blackjack/api/{<game-id>}/status"
-        =/  existing=(unit session-state:blackjack)  (~(get by sessions.state) game-id)
+          [%three-body %api game-id:three-body %status ~]
+        =/  =game-id:three-body  (snag 2 `path`uri)
+        ~&  >>  "Matched route: GET /three-body/api/{<game-id>}/status"
+        =/  existing=(unit session-state:three-body)  (~(get by sessions.state) game-id)
         ?~  existing
           ~&  >>>  "Session not found: {<game-id>}"
-          =/  error-json=tape  (make-json-error:blackjack 404 "Session not found")
+          =/  error-json=tape  (make-json-error:three-body 404 "Session not found")
           :_  state
           :_  ~
           ^-  effect:http
           [%res id %404 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         =/  json=tape
-          (make-json-full-session:blackjack u.existing)
+          (make-json-full-session:three-body u.existing)
         :_  state
         ^-  (list effect:http)
         :_  ~
@@ -375,17 +369,17 @@
         [~[[%res ~ %500 ~ ~]] state]
         ::
           :: Create new game session
-          [%blackjack %api %session %create ~]
-        ~&  >>  "Matched /blackjack/api/session/create route"
+          [%three-body %api %session %create ~]
+        ~&  >>  "Matched /three-body/api/session/create route"
         ::  Generate UUID from entropy
-        =/  =game-id:blackjack  (generate-uuid:blackjack entropy)
+        =/  =game-id:three-body  (generate-uuid:three-body entropy)
         ~&  >>  "Generated game-id: {<game-id>}"
         ::  Create initial game state
-        =/  config=runtime-config:blackjack  (get-config state)
-        =/  initial-game=game-state-inner:blackjack
-          (initial-game-state:blackjack initial-bank.config)
+        =/  config=runtime-config:three-body  (get-config state)
+        =/  initial-game=game-state-inner:three-body
+          (initial-game-state:three-body initial-bank.config)
         ::  Create session state
-        =/  new-session=session-state:blackjack
+        =/  new-session=session-state:three-body
           :*  game-id=game-id
               player-pkh=~
               bet-tx-hash=~
@@ -400,7 +394,7 @@
           ==
         ::  Return session info with server PKH and initial bank
         =/  json=tape
-          (make-json-session-created:blackjack game-id wallet-pkh.config bank.initial-game)
+          (make-json-session-created:three-body game-id wallet-pkh.config bank.initial-game)
         ~&  >>  "Created session: {<game-id>}"
         :_  state(sessions (~(put by sessions.state) game-id new-session))
         ^-  (list effect:http)
@@ -414,37 +408,37 @@
         ==
         ::
           ::  Deal initial hands
-          [%blackjack %api game-id:blackjack %deal ~]
-        =/  =game-id:blackjack  (snag 2 `path`uri)
-        ~&  >>  "Matched /blackjack/api/{<game-id>}/deal route"
+          [%three-body %api game-id:three-body %deal ~]
+        =/  =game-id:three-body  (snag 2 `path`uri)
+        ~&  >>  "Matched /three-body/api/{<game-id>}/deal route"
         ::  Parse body to get bet amount
         ?~  body
-          =/  error-json=tape  (make-json-error:blackjack 400 "Missing request body")
+          =/  error-json=tape  (make-json-error:three-body 400 "Missing request body")
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %400 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         =/  body-text=tape  (trip q.u.body)
-        =/  bet-parsed=(unit @ud)  (parse-json-number:blackjack "bet" body-text)
+        =/  bet-parsed=(unit @ud)  (parse-json-number:three-body "bet" body-text)
         =/  bet=@ud  ?~(bet-parsed 100 u.bet-parsed)
         ~&  >>  "Using bet: {<bet>}"
         ::
         ::  Get session state
-        =/  existing=(unit session-state:blackjack)  (~(get by sessions.state) game-id)
+        =/  existing=(unit session-state:three-body)  (~(get by sessions.state) game-id)
         ?~  existing
           ~&  >>>  "Session not found: {<game-id>}"
-          =/  error-json=tape  (make-json-error:blackjack 404 "Session not found")
+          =/  error-json=tape  (make-json-error:three-body 404 "Session not found")
           :_  state
           :_  ~
           [%res id %404 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
-        =/  current-session=session-state:blackjack  u.existing
-        =/  current-game=game-state-inner:blackjack  game.current-session
+        =/  current-session=session-state:three-body  u.existing
+        =/  current-game=game-state-inner:three-body  game.current-session
         ::
         ::  Validate game action
         =/  validation-error=(unit tape)
-          (validate-game-action:blackjack %deal current-session)
+          (validate-game-action:three-body %deal current-session)
         ?^  validation-error
-          =/  error-json=tape  (make-json-error:blackjack 400 u.validation-error)
+          =/  error-json=tape  (make-json-error:three-body 400 u.validation-error)
           :_  state
           ^-  (list effect:http)
           :_  ~
@@ -452,7 +446,7 @@
         ::
         ::  Check if player can afford the bet
         ?:  (gth bet bank.current-game)
-          =/  error-json=tape  (make-json-error:blackjack 400 "Insufficient funds")
+          =/  error-json=tape  (make-json-error:three-body 400 "Insufficient funds")
           :_  state
           ^-  (list effect:http)
           :_  ~
@@ -462,27 +456,27 @@
         =/  new-bank=@ud  (sub bank.current-game bet)
         ::
         ::  Create and shuffle deck with entropy
-        =/  fresh-deck=(list card:blackjack)  create-deck:blackjack
-        =/  shuffled-deck=(list card:blackjack)
-          (shuffle-deck:blackjack fresh-deck `@uvJ`entropy)
+        =/  fresh-deck=(list card:three-body)  create-deck:three-body
+        =/  shuffled-deck=(list card:three-body)
+          (shuffle-deck:three-body fresh-deck `@uvJ`entropy)
         ::
         ::  Deal initial hands
-        =+  [player-hand dealer-hand remaining-deck]=(deal-initial:blackjack shuffled-deck)
-        =/  player-score=@ud  (hand-value:blackjack (snag 0 player-hand))
-        =/  dealer-visible=card:blackjack  (snag 1 (snag 0 dealer-hand))
+        =+  [player-hand dealer-hand remaining-deck]=(deal-initial:three-body shuffled-deck)
+        =/  player-score=@ud  (hand-value:three-body (snag 0 player-hand))
+        =/  dealer-visible=card:three-body  (snag 1 (snag 0 dealer-hand))
         ::
         ::  Update game state with bet deducted
-        =/  updated-game=game-state-inner:blackjack
+        =/  updated-game=game-state-inner:three-body
           current-game(deck remaining-deck, player-hand player-hand, dealer-hand dealer-hand, current-bet bet, bank new-bank, game-in-progress %.y, dealer-turn %.n, deals-made +(deals-made.current-game))
         ::
         ::  Update session state (set status to active)
-        =/  updated-session=session-state:blackjack
+        =/  updated-session=session-state:three-body
           current-session(game updated-game, last-activity now.input.ovum, status %active)
         ~&  >>  "Updated game - current-bet: {<current-bet.updated-game>}, bank: {<bank.updated-game>}"
         ::
         ::  Build response (note: using 0 for backward compat with old sessionId field)
         =/  json=tape
-          (make-json-deal:blackjack player-hand dealer-hand player-score dealer-visible 0 new-bank win-loss.updated-game)
+          (make-json-deal:three-body player-hand dealer-hand player-score dealer-visible 0 new-bank win-loss.updated-game)
         ::
         :_  state(sessions (~(put by sessions.state) game-id updated-session))
         ^-  (list effect:http)
@@ -496,39 +490,39 @@
         ==
         ::
           ::  Player hits
-          [%blackjack %api game-id:blackjack %hit ~]
-        =/  =game-id:blackjack  (snag 2 `path`uri)
-        ~&  >>  "Matched /blackjack/api/{<game-id>}/hit route"
+          [%three-body %api game-id:three-body %hit ~]
+        =/  =game-id:three-body  (snag 2 `path`uri)
+        ~&  >>  "Matched /three-body/api/{<game-id>}/hit route"
         ::  Get session state
-        =/  existing=(unit session-state:blackjack)  (~(get by sessions.state) game-id)
+        =/  existing=(unit session-state:three-body)  (~(get by sessions.state) game-id)
         ?~  existing
           ~&  >>>  "Session not found: {<game-id>}"
-          =/  error-json=tape  (make-json-error:blackjack 404 "Session not found")
+          =/  error-json=tape  (make-json-error:three-body 404 "Session not found")
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %404 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
-        =/  current-session=session-state:blackjack  u.existing
-        =/  current-game=game-state-inner:blackjack  game.current-session
+        =/  current-session=session-state:three-body  u.existing
+        =/  current-game=game-state-inner:three-body  game.current-session
         ::
         ::  Validate game action
         =/  validation-error=(unit tape)
-          (validate-game-action:blackjack %hit current-session)
+          (validate-game-action:three-body %hit current-session)
         ?^  validation-error
-          =/  error-json=tape  (make-json-error:blackjack 400 u.validation-error)
+          =/  error-json=tape  (make-json-error:three-body 400 u.validation-error)
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %400 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         ::
         ::  Draw card
-        =+  [new-card remaining-deck]=(draw-card:blackjack deck.current-game)
-        =/  new-player-hand=hand:blackjack  (snoc (snag 0 player-hand.current-game) new-card)
-        =/  new-score=@ud  (hand-value:blackjack new-player-hand)
-        =/  busted=?  (is-busted:blackjack new-player-hand)
+        =+  [new-card remaining-deck]=(draw-card:three-body deck.current-game)
+        =/  new-player-hand=hand:three-body  (snoc (snag 0 player-hand.current-game) new-card)
+        =/  new-score=@ud  (hand-value:three-body new-player-hand)
+        =/  busted=?  (is-busted:three-body new-player-hand)
         ::
         ::  Update game (end game if busted, clear bet and update win-loss)
-        =/  updated-game=game-state-inner:blackjack
+        =/  updated-game=game-state-inner:three-body
           ?:  busted
             ::  Calculate loss for busting (payout=0, so profit = 0 - bet = -bet)
             =/  profit=@sd  (dif:si (sun:si 0) (sun:si current-bet.current-game))
@@ -537,11 +531,11 @@
           current-game(deck remaining-deck, player-hand (snap player-hand.current-game 0 new-player-hand))
         ::
         ::  Update session state
-        =/  updated-session=session-state:blackjack
+        =/  updated-session=session-state:three-body
           current-session(game updated-game, last-activity now.input.ovum, status ?:(busted %ended %active))
         ::
         =/  json=tape
-          (make-json-hit:blackjack new-card new-player-hand new-score busted bank.updated-game win-loss.updated-game)
+          (make-json-hit:three-body new-card new-player-hand new-score busted bank.updated-game win-loss.updated-game)
         ::
         :_  state(sessions (~(put by sessions.state) game-id updated-session))
         ^-  (list effect:http)
@@ -555,47 +549,47 @@
         ==
         ::
           ::  Player stands
-          [%blackjack %api game-id:blackjack %stand ~]
-        =/  =game-id:blackjack  (snag 2 `path`uri)
-        ~&  >>  "Matched /blackjack/api/{<game-id>}/stand route"
+          [%three-body %api game-id:three-body %stand ~]
+        =/  =game-id:three-body  (snag 2 `path`uri)
+        ~&  >>  "Matched /three-body/api/{<game-id>}/stand route"
         ::  Get session state
-        =/  existing=(unit session-state:blackjack)  (~(get by sessions.state) game-id)
+        =/  existing=(unit session-state:three-body)  (~(get by sessions.state) game-id)
         ?~  existing
           ~&  >>>  "Session not found: {<game-id>}"
-          =/  error-json=tape  (make-json-error:blackjack 404 "Session not found")
+          =/  error-json=tape  (make-json-error:three-body 404 "Session not found")
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %404 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
-        =/  current-session=session-state:blackjack  u.existing
-        =/  current-game=game-state-inner:blackjack  game.current-session
+        =/  current-session=session-state:three-body  u.existing
+        =/  current-game=game-state-inner:three-body  game.current-session
         ::
         ::  Validate game action
         =/  validation-error=(unit tape)
-          (validate-game-action:blackjack %stand current-session)
+          (validate-game-action:three-body %stand current-session)
         ?^  validation-error
-          =/  error-json=tape  (make-json-error:blackjack 400 u.validation-error)
+          =/  error-json=tape  (make-json-error:three-body 400 u.validation-error)
           :_  state
           :_  ~
           [%res id %400 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         ::
         ::  Dealer plays
-        =/  final-dealer-hand=hand:blackjack  (snag 0 dealer-hand.current-game)
-        =/  remaining-deck=(list card:blackjack)  deck.current-game
+        =/  final-dealer-hand=hand:three-body  (snag 0 dealer-hand.current-game)
+        =/  remaining-deck=(list card:three-body)  deck.current-game
         |-
-        ?:  (dealer-should-hit:blackjack final-dealer-hand)
-          =+  [new-card new-deck]=(draw-card:blackjack remaining-deck)
+        ?:  (dealer-should-hit:three-body final-dealer-hand)
+          =+  [new-card new-deck]=(draw-card:three-body remaining-deck)
           $(final-dealer-hand (snoc final-dealer-hand new-card), remaining-deck new-deck)
         ::
         ::  Resolve outcome
         ~&  >  "Stand - current-bet: {<current-bet.current-game>}, bank: {<bank.current-game>}"
-        =+  [outcome multiplier]=(resolve-outcome:blackjack (snag 0 player-hand.current-game) final-dealer-hand)
+        =+  [outcome multiplier]=(resolve-outcome:three-body (snag 0 player-hand.current-game) final-dealer-hand)
         ~&  >  "Outcome: {<outcome>}, multiplier: {<multiplier>}"
         =/  payout=@ud  (mul current-bet.current-game multiplier)
         ~&  >  "Payout: {<payout>}"
         =/  new-bank=@ud  (add bank.current-game payout)
         ~&  >  "New bank: {<new-bank>}"
-        =/  dealer-score=@ud  (hand-value:blackjack final-dealer-hand)
+        =/  dealer-score=@ud  (hand-value:three-body final-dealer-hand)
         ~&  >  "Win/loss: {<win-loss.current-game>}"
         ::
         ::  Calculate win/loss change (payout includes return of bet)
@@ -603,11 +597,11 @@
         =/  new-win-loss=@sd  (sum:si win-loss.current-game profit)
         ::
         ::  Update game (clear bet when ending)
-        =/  updated-game=game-state-inner:blackjack
+        =/  updated-game=game-state-inner:three-body
           current-game(dealer-hand (snap dealer-hand.current-game 0 final-dealer-hand), deck remaining-deck, bank new-bank, win-loss new-win-loss, current-bet 0, game-in-progress %.n)
         ::
         ::  Create history entry
-        =/  history-entry=hand-history:blackjack
+        =/  history-entry=hand-history:three-body
           :*  bet=current-bet.current-game
               player-hand=(snag 0 player-hand.current-game)
               dealer-hand=final-dealer-hand
@@ -617,16 +611,16 @@
               timestamp=now.input.ovum
           ==
         ::  Append to history (keep last N hands per config)
-        =/  config=runtime-config:blackjack  (get-config state)
-        =/  new-history=(list hand-history:blackjack)
-          (append-to-history:blackjack history-entry history.current-session max-history-entries.config)
+        =/  config=runtime-config:three-body  (get-config state)
+        =/  new-history=(list hand-history:three-body)
+          (append-to-history:three-body history-entry history.current-session max-history-entries.config)
         ::
         ::  Update session state (set status to ended and add history)
-        =/  updated-session=session-state:blackjack
+        =/  updated-session=session-state:three-body
           current-session(game updated-game, last-activity now.input.ovum, status %ended, history new-history)
         ::
         =/  json=tape
-          (make-json-stand:blackjack final-dealer-hand dealer-score outcome payout new-bank new-win-loss)
+          (make-json-stand:three-body final-dealer-hand dealer-score outcome payout new-bank new-win-loss)
         ::
         :_  state(sessions (~(put by sessions.state) game-id updated-session))
         :_  ~
@@ -639,33 +633,33 @@
         ==
         ::
           ::  Player doubles down
-          [%blackjack %api game-id:blackjack %double ~]
-        =/  =game-id:blackjack  (snag 2 `path`uri)
-        ~&  >>  "Matched /blackjack/api/{<game-id>}/double route"
+          [%three-body %api game-id:three-body %double ~]
+        =/  =game-id:three-body  (snag 2 `path`uri)
+        ~&  >>  "Matched /three-body/api/{<game-id>}/double route"
         ::  Get session state
-        =/  existing=(unit session-state:blackjack)  (~(get by sessions.state) game-id)
+        =/  existing=(unit session-state:three-body)  (~(get by sessions.state) game-id)
         ?~  existing
           ~&  >>>  "Session not found: {<game-id>}"
-          =/  error-json=tape  (make-json-error:blackjack 404 "Session not found")
+          =/  error-json=tape  (make-json-error:three-body 404 "Session not found")
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %404 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
-        =/  current-session=session-state:blackjack  u.existing
-        =/  current-game=game-state-inner:blackjack  game.current-session
+        =/  current-session=session-state:three-body  u.existing
+        =/  current-game=game-state-inner:three-body  game.current-session
         ::
         ::  Validate game action
         =/  validation-error=(unit tape)
-          (validate-game-action:blackjack %double current-session)
+          (validate-game-action:three-body %double current-session)
         ?^  validation-error
-          =/  error-json=tape  (make-json-error:blackjack 400 u.validation-error)
+          =/  error-json=tape  (make-json-error:three-body 400 u.validation-error)
           :_  state
           :_  ~
           [%res id %400 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         ::
         ::  Check if player can afford to double
         ?:  (gth current-bet.current-game bank.current-game)
-          =/  error-json=tape  (make-json-error:blackjack 400 "Insufficient funds to double down")
+          =/  error-json=tape  (make-json-error:three-body 400 "Insufficient funds to double down")
           :_  state
           ^-  (list effect:http)
           :_  ~
@@ -676,21 +670,21 @@
         =/  doubled-bet=@ud  (mul current-bet.current-game 2)
         ::
         ::  Draw exactly one card
-        =+  [new-card remaining-deck]=(draw-card:blackjack deck.current-game)
-        =/  new-player-hand=hand:blackjack  (snoc (snag 0 player-hand.current-game) new-card)
-        =/  player-busted=?  (is-busted:blackjack new-player-hand)
+        =+  [new-card remaining-deck]=(draw-card:three-body deck.current-game)
+        =/  new-player-hand=hand:three-body  (snoc (snag 0 player-hand.current-game) new-card)
+        =/  player-busted=?  (is-busted:three-body new-player-hand)
         ::
         ::  If busted, game over (no need to play dealer hand)
         ?:  player-busted
-          =/  dealer-hand-current=hand:blackjack  (snag 0 dealer-hand.current-game)
-          =/  dealer-score=@ud  (hand-value:blackjack dealer-hand-current)
+          =/  dealer-hand-current=hand:three-body  (snag 0 dealer-hand.current-game)
+          =/  dealer-score=@ud  (hand-value:three-body dealer-hand-current)
           ::  Calculate win/loss (busted = loss of doubled bet)
           =/  loss=@sd  (new:si %.n doubled-bet)
           =/  new-win-loss=@sd  (sum:si win-loss.current-game loss)
-          =/  final-game=game-state-inner:blackjack
+          =/  final-game=game-state-inner:three-body
             current-game(deck remaining-deck, player-hand (snap player-hand.current-game 0 new-player-hand), current-bet 0, bank new-bank, win-loss new-win-loss, game-in-progress %.n)
           ::  Create history entry (busted = loss)
-          =/  history-entry=hand-history:blackjack
+          =/  history-entry=hand-history:three-body
             :*  bet=doubled-bet
                 player-hand=new-player-hand
                 dealer-hand=dealer-hand-current
@@ -700,14 +694,14 @@
                 timestamp=now.input.ovum
             ==
           ::  Append to history (keep last N hands per config)
-          =/  config=runtime-config:blackjack  (get-config state)
-          =/  new-history=(list hand-history:blackjack)
-            (append-to-history:blackjack history-entry history.current-session max-history-entries.config)
+          =/  config=runtime-config:three-body  (get-config state)
+          =/  new-history=(list hand-history:three-body)
+            (append-to-history:three-body history-entry history.current-session max-history-entries.config)
           ::  Update session state (set status to ended and add history)
-          =/  final-session=session-state:blackjack
+          =/  final-session=session-state:three-body
             current-session(game final-game, last-activity now.input.ovum, status %ended, history new-history)
           =/  json=tape
-            (make-json-double:blackjack new-player-hand dealer-hand-current dealer-score %loss 0 new-bank new-win-loss)
+            (make-json-double:three-body new-player-hand dealer-hand-current dealer-score %loss 0 new-bank new-win-loss)
           :_  state(sessions (~(put by sessions.state) game-id final-session))
           ^-  (list effect:http)
           :_  ~
@@ -720,29 +714,29 @@
           ==
         ::
         ::  Not busted, dealer plays
-        =/  final-dealer-hand=hand:blackjack  (snag 0 dealer-hand.current-game)
-        =/  deck-for-dealer=(list card:blackjack)  remaining-deck
+        =/  final-dealer-hand=hand:three-body  (snag 0 dealer-hand.current-game)
+        =/  deck-for-dealer=(list card:three-body)  remaining-deck
         |-
-        ?:  (dealer-should-hit:blackjack final-dealer-hand)
-          =+  [new-card new-deck]=(draw-card:blackjack deck-for-dealer)
+        ?:  (dealer-should-hit:three-body final-dealer-hand)
+          =+  [new-card new-deck]=(draw-card:three-body deck-for-dealer)
           $(final-dealer-hand (snoc final-dealer-hand new-card), deck-for-dealer new-deck)
         ::
         ::  Resolve outcome with doubled bet
-        =+  [outcome multiplier]=(resolve-outcome:blackjack new-player-hand final-dealer-hand)
+        =+  [outcome multiplier]=(resolve-outcome:three-body new-player-hand final-dealer-hand)
         =/  payout=@ud  (mul doubled-bet multiplier)
         =/  final-bank=@ud  (add new-bank payout)
-        =/  dealer-score=@ud  (hand-value:blackjack final-dealer-hand)
+        =/  dealer-score=@ud  (hand-value:three-body final-dealer-hand)
         ::
         ::  Calculate win/loss change (payout includes return of bet)
         =/  profit=@sd  (dif:si (sun:si payout) (sun:si doubled-bet))
         =/  new-win-loss=@sd  (sum:si win-loss.current-game profit)
         ::
         ::  Update game (clear bet when ending)
-        =/  final-game=game-state-inner:blackjack
+        =/  final-game=game-state-inner:three-body
           current-game(dealer-hand (snap dealer-hand.current-game 0 final-dealer-hand), player-hand (snap player-hand.current-game 0 new-player-hand), deck deck-for-dealer, current-bet 0, bank final-bank, win-loss new-win-loss, game-in-progress %.n)
         ::
         ::  Create history entry
-        =/  history-entry=hand-history:blackjack
+        =/  history-entry=hand-history:three-body
           :*  bet=doubled-bet
               player-hand=new-player-hand
               dealer-hand=final-dealer-hand
@@ -752,16 +746,16 @@
               timestamp=now.input.ovum
           ==
         ::  Append to history (keep last N hands per config)
-        =/  config=runtime-config:blackjack  (get-config state)
-        =/  new-history=(list hand-history:blackjack)
-          (append-to-history:blackjack history-entry history.current-session max-history-entries.config)
+        =/  config=runtime-config:three-body  (get-config state)
+        =/  new-history=(list hand-history:three-body)
+          (append-to-history:three-body history-entry history.current-session max-history-entries.config)
         ::
         ::  Update session state (set status to ended and add history)
-        =/  final-session=session-state:blackjack
+        =/  final-session=session-state:three-body
           current-session(game final-game, last-activity now.input.ovum, status %ended, history new-history)
         ::
         =/  json=tape
-          (make-json-double:blackjack new-player-hand final-dealer-hand dealer-score outcome payout final-bank new-win-loss)
+          (make-json-double:three-body new-player-hand final-dealer-hand dealer-score outcome payout final-bank new-win-loss)
         ::
         :_  state(sessions (~(put by sessions.state) game-id final-session))
         ^-  (list effect:http)
@@ -775,25 +769,25 @@
         ==
         ::
           ::  Player surrenders
-          [%blackjack %api game-id:blackjack %surrender ~]
-        =/  =game-id:blackjack  (snag 2 `path`uri)
-        ~&  >>  "Matched /blackjack/api/{<game-id>}/surrender route"
+          [%three-body %api game-id:three-body %surrender ~]
+        =/  =game-id:three-body  (snag 2 `path`uri)
+        ~&  >>  "Matched /three-body/api/{<game-id>}/surrender route"
         ::  Get session state
-        =/  existing=(unit session-state:blackjack)  (~(get by sessions.state) game-id)
+        =/  existing=(unit session-state:three-body)  (~(get by sessions.state) game-id)
         ?~  existing
           ~&  >>>  "Session not found: {<game-id>}"
-          =/  error-json=tape  (make-json-error:blackjack 404 "Session not found")
+          =/  error-json=tape  (make-json-error:three-body 404 "Session not found")
           :_  state
           :_  ~
           [%res id %404 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
-        =/  current-session=session-state:blackjack  u.existing
-        =/  current-game=game-state-inner:blackjack  game.current-session
+        =/  current-session=session-state:three-body  u.existing
+        =/  current-game=game-state-inner:three-body  game.current-session
         ::
         ::  Validate game action
         =/  validation-error=(unit tape)
-          (validate-game-action:blackjack %surrender current-session)
+          (validate-game-action:three-body %surrender current-session)
         ?^  validation-error
-          =/  error-json=tape  (make-json-error:blackjack 400 u.validation-error)
+          =/  error-json=tape  (make-json-error:three-body 400 u.validation-error)
           :_  state
           :_  ~
           [%res id %400 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
@@ -807,11 +801,11 @@
         =/  new-win-loss=@sd  (sum:si win-loss.current-game profit)
         ::
         ::  Update game state
-        =/  updated-game=game-state-inner:blackjack
+        =/  updated-game=game-state-inner:three-body
           current-game(bank new-bank, win-loss new-win-loss, current-bet 0, game-in-progress %.n)
         ::
         ::  Create history entry
-        =/  history-entry=hand-history:blackjack
+        =/  history-entry=hand-history:three-body
           :*  bet=current-bet.current-game
               player-hand=(snag 0 player-hand.current-game)
               dealer-hand=(snag 0 dealer-hand.current-game)
@@ -821,12 +815,12 @@
               timestamp=now.input.ovum
           ==
         ::  Append to history
-        =/  config=runtime-config:blackjack  (get-config state)
-        =/  new-history=(list hand-history:blackjack)
-          (append-to-history:blackjack history-entry history.current-session max-history-entries.config)
+        =/  config=runtime-config:three-body  (get-config state)
+        =/  new-history=(list hand-history:three-body)
+          (append-to-history:three-body history-entry history.current-session max-history-entries.config)
         ::
         ::  Update session state
-        =/  updated-session=session-state:blackjack
+        =/  updated-session=session-state:three-body
           current-session(game updated-game, last-activity now.input.ovum, status %ended, history new-history)
         ::
         =/  json=tape
@@ -852,11 +846,11 @@
         ==
         ::
           ::  Cash out - withdraw funds from game to player's wallet
-          [%blackjack %api %wallet %cashout ~]
-        ~&  >>  "Matched /blackjack/api/wallet/cashout route"
+          [%three-body %api %wallet %cashout ~]
+        ~&  >>  "Matched /three-body/api/wallet/cashout route"
         ::  Parse body to get game-id, player-pkh, and amount
         ?~  body
-          =/  error-json=tape  (make-json-error:blackjack 400 "Missing request body")
+          =/  error-json=tape  (make-json-error:three-body 400 "Missing request body")
           :_  state
           ^-  (list effect:http)
           :_  ~
@@ -865,51 +859,51 @@
         ~&  >>  "Cashout request body: {<body-text>}"
         ::
         ::  Parse required fields
-        =/  game-id-parsed=(unit @t)  (parse-json-text:blackjack "gameId" body-text)
-        =/  player-pkh-parsed=(unit @t)  (parse-json-text:blackjack "playerPkh" body-text)
-        =/  amount-parsed=(unit @ud)  (parse-json-number:blackjack "amount" body-text)
+        =/  game-id-parsed=(unit @t)  (parse-json-text:three-body "gameId" body-text)
+        =/  player-pkh-parsed=(unit @t)  (parse-json-text:three-body "playerPkh" body-text)
+        =/  amount-parsed=(unit @ud)  (parse-json-number:three-body "amount" body-text)
         ::
         ::  Validate all fields present
         ?~  game-id-parsed
-          =/  error-json=tape  (make-json-cashout-tx:blackjack '' 0 '' 0 %.n ~ `"Missing gameId field")
+          =/  error-json=tape  (make-json-cashout-tx:three-body '' 0 '' 0 %.n ~ `"Missing gameId field")
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %400 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         ?~  player-pkh-parsed
-          =/  error-json=tape  (make-json-cashout-tx:blackjack u.game-id-parsed 0 '' 0 %.n ~ `"Missing playerPkh field")
+          =/  error-json=tape  (make-json-cashout-tx:three-body u.game-id-parsed 0 '' 0 %.n ~ `"Missing playerPkh field")
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %400 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         ?~  amount-parsed
-          =/  error-json=tape  (make-json-cashout-tx:blackjack u.game-id-parsed 0 u.player-pkh-parsed 0 %.n ~ `"Missing amount field")
+          =/  error-json=tape  (make-json-cashout-tx:three-body u.game-id-parsed 0 u.player-pkh-parsed 0 %.n ~ `"Missing amount field")
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %400 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         ::
-        =/  =game-id:blackjack  u.game-id-parsed
+        =/  =game-id:three-body  u.game-id-parsed
         =/  player-pkh=@t  u.player-pkh-parsed
         =/  amount=@ud  u.amount-parsed
         ~&  >>  "Cashout: game-id={<game-id>}, player-pkh={<player-pkh>}, amount={<amount>}"
         ::
         ::  Validate session exists
-        =/  existing=(unit session-state:blackjack)  (~(get by sessions.state) game-id)
+        =/  existing=(unit session-state:three-body)  (~(get by sessions.state) game-id)
         ?~  existing
           ~&  >>>  "Session not found: {<game-id>}"
-          =/  error-json=tape  (make-json-cashout-tx:blackjack game-id amount player-pkh 0 %.n ~ `"Session not found")
+          =/  error-json=tape  (make-json-cashout-tx:three-body game-id amount player-pkh 0 %.n ~ `"Session not found")
           :_  state
           ^-  (list effect:http)
           :_  ~
           [%res id %404 ~[['Content-Type' 'application/json']] (to-octs:http (crip error-json))]
         ::
-        =/  current-session=session-state:blackjack  u.existing
-        =/  current-game=game-state-inner:blackjack  game.current-session
+        =/  current-session=session-state:three-body  u.existing
+        =/  current-game=game-state-inner:three-body  game.current-session
         ::
         ::  Validate no game in progress
         ?:  game-in-progress.current-game
-          =/  error-json=tape  (make-json-cashout-tx:blackjack game-id amount player-pkh bank.current-game %.n ~ `"Cannot cash out during active game")
+          =/  error-json=tape  (make-json-cashout-tx:three-body game-id amount player-pkh bank.current-game %.n ~ `"Cannot cash out during active game")
           :_  state
           ^-  (list effect:http)
           :_  ~
@@ -917,7 +911,7 @@
         ::
         ::  Validate sufficient balance
         ?:  (gth amount bank.current-game)
-          =/  error-json=tape  (make-json-cashout-tx:blackjack game-id amount player-pkh bank.current-game %.n ~ `"Insufficient balance")
+          =/  error-json=tape  (make-json-cashout-tx:three-body game-id amount player-pkh bank.current-game %.n ~ `"Insufficient balance")
           :_  state
           ^-  (list effect:http)
           :_  ~
@@ -925,7 +919,7 @@
         ::
         ::  Validate minimum cashout amount (at least 1)
         ?:  =(0 amount)
-          =/  error-json=tape  (make-json-cashout-tx:blackjack game-id amount player-pkh bank.current-game %.n ~ `"Amount must be greater than 0")
+          =/  error-json=tape  (make-json-cashout-tx:three-body game-id amount player-pkh bank.current-game %.n ~ `"Amount must be greater than 0")
           :_  state
           ^-  (list effect:http)
           :_  ~
@@ -944,17 +938,17 @@
         ::  4. Return raw-tx for submission
         ::
         ::  Update game state
-        =/  updated-game=game-state-inner:blackjack
+        =/  updated-game=game-state-inner:three-body
           current-game(bank new-bank)
         ::
         ::  Update session state
-        =/  updated-session=session-state:blackjack
+        =/  updated-session=session-state:three-body
           current-session(game updated-game, last-activity now.input.ovum)
         ::
         ::  Build response (tx-ready=%.y if config exists)
         =/  has-tx-config=?  &(?=(^ config.state) ?=(^ private-key.u.config.state))
         =/  json=tape
-          (make-json-cashout-tx:blackjack game-id amount player-pkh new-bank has-tx-config cashout-tx-hash.updated-session ~)
+          (make-json-cashout-tx:three-body game-id amount player-pkh new-bank has-tx-config cashout-tx-hash.updated-session ~)
         ~&  >>  "Cashout completed, returning response"
         ::
         :_  state(sessions (~(put by sessions.state) game-id updated-session))
@@ -979,7 +973,7 @@
             ~
           ::  Build the transaction effect
           ^-  (list ?(effect:http effect:wt effect:txt))
-          :~  %:  create-payout-effect:blackjack
+          :~  %:  create-payout-effect:three-body
                 game-id
                 wallet-pkh.u.config.state
                 u.private-key.u.config.state
