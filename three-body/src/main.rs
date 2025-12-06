@@ -1,19 +1,16 @@
 use std::error::Error;
 use std::fs;
 
-use three_body::ThreeBodyConfig;
-use clap::Parser;
-use nockapp::{http_driver, one_punch_driver, NockAppError};
+use three_body::{ThreeBodyConfig, init_with_config};
+use nockapp::{http_driver, one_punch_driver};
 use nockapp::driver::Operation;
 use nockapp::kernel::boot;
 use nockapp::kernel::boot::NockStackSize;
 use nockapp::noun::slab::NounSlab;
 use nockapp::NockApp;
-use nockchain_wallet::Wallet;
 use nockvm::noun::{D, T};
 use nockvm_macros::tas;
 use tracing::{info, warn};
-use zkvm_jetpack::hot::produce_prover_hot_state;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -37,10 +34,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             warn!("Falling back to hardcoded config (for development only)");
             // Fallback to hardcoded config for development
             ThreeBodyConfig {
+                physics: three_body::PhysicsConfig {
+                    gravitational_constant: 1.0,
+                    time_step: 0.001,
+                },
                 server: three_body::ServerConfig {
                     wallet_pkh: "9yPePjfWAdUnzaQKyxcRXKRa5PpUzKKEwtpECBZsUYt9Jd7egSDEWoV".to_string(),
                     private_key: "PLACEHOLDER_PRIVKEY".to_string(),
-                    // public_key: "PLACEHOLDER_PUBKEY".to_string(),
                 },
             }
         }

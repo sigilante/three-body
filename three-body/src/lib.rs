@@ -3,12 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-use nockapp::noun::slab::NounSlab;
-use nockapp::utils::make_tas;
 use nockapp::NockApp;
-use nockchain_math::noun_ext::NounMathExt;
-use nockvm::noun::{Noun, D, T, YES, NO};
-use nockvm_macros::tas;
 use tracing::info;
 
 /// Configuration for the Three-Body server
@@ -16,6 +11,17 @@ use tracing::info;
 pub struct ThreeBodyConfig {
     pub physics: PhysicsConfig,
     pub server: ServerConfig,
+}
+
+impl ThreeBodyConfig {
+    /// Load configuration from a TOML file
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let contents = fs::read_to_string(path.as_ref())
+            .context("Failed to read config file")?;
+        let config: ThreeBodyConfig = toml::from_str(&contents)
+            .context("Failed to parse config TOML")?;
+        Ok(config)
+    }
 }
 
 /// Physics-related configuration
@@ -31,4 +37,16 @@ pub struct PhysicsConfig {
 pub struct ServerConfig {
     pub wallet_pkh: String,
     pub private_key: String,
+}
+
+/// Initialize the NockApp with configuration by poking the config into the kernel
+pub async fn init_with_config(_nockapp: &mut NockApp, config: &ThreeBodyConfig) -> Result<()> {
+    info!("Config loaded: wallet_pkh={}", config.server.wallet_pkh);
+    info!("Physics params: G={}, dt={}", config.physics.gravitational_constant, config.physics.time_step);
+
+    // TODO: Implement config poke into kernel
+    // For now, the kernel uses default config
+    info!("Using default kernel configuration");
+
+    Ok(())
 }
