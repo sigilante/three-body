@@ -3,6 +3,7 @@
 +$  cause
   $%  [%tx-sent tx-hash=@t]
       [%tx-fail error=@t]
+      [%born ~]
   ==
 ::
 +$  effect

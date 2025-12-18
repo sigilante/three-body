@@ -93,8 +93,44 @@ class ThreeBodySimulation {
         this.animationId = null;
         this.stepsPerFrame = 10;  // Run multiple physics steps per render frame
 
+        // Checkpointing
+        this.checkpointInterval = 1000;  // Checkpoint every N steps
+        this.lastCheckpoint = 0;
+
+        // Server-side physics mode
+        this.serverMode = false;  // Toggle between client-side (false) and server-side (true) physics
+        this.serverStepBuffer = [];  // Buffer of states from server
+        this.bufferSize = 100;  // Request this many steps from server at a time
+        this.isRequestingSteps = false;  // Prevent concurrent server requests
+
         this.setupEventListeners();
-        this.loadPreset('figure-eight');
+        this.initializeSession();
+    }
+
+    // Initialize session with server and load initial preset
+    async initializeSession() {
+        try {
+            // Create a session on the server
+            const response = await fetch('/three-body/api/session/create', {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.sessionId = data.gameId;
+                document.getElementById('session-id').textContent = this.sessionId;
+                document.getElementById('session-status').textContent = 'Connected';
+                console.log('Session created:', this.sessionId);
+
+                // Load the initial preset from server
+                await this.loadPreset('figure-eight');
+            } else {
+                throw new Error('Failed to create session');
+            }
+        } catch (error) {
+            console.error('Failed to initialize session:', error);
+            alert('Failed to connect to server. Please refresh the page.');
+        }
     }
 
     setupCanvas() {
@@ -143,29 +179,78 @@ class ThreeBodySimulation {
         document.getElementById('save-state-btn').addEventListener('click', () => {
             this.saveState();
         });
+
+        document.getElementById('server-mode-toggle').addEventListener('change', (e) => {
+            this.toggleServerMode(e.target.checked);
+        });
+
+        document.getElementById('buffer-size-input').addEventListener('change', (e) => {
+            const newSize = parseInt(e.target.value);
+            if (newSize >= 1 && newSize <= 1000) {
+                this.bufferSize = newSize;
+                console.log(`Buffer size updated to ${newSize} steps`);
+            }
+        });
     }
 
-    loadPreset(presetId) {
-        const preset = PRESETS[presetId];
-        if (!preset) return;
-
+    async loadPreset(presetId) {
         this.pause();
-        this.bodies = preset.bodies.map(b => ({
-            pos: { x: b.px, y: b.py },
-            vel: { x: b.vx, y: b.vy },
-            mass: b.mass,
-            color: b.color
-        }));
 
-        this.G = preset.G;
-        this.dt = preset.dt;
-        this.time = 0;
-        this.stepCount = 0;
-        this.trails = [[], [], []];
+        try {
+            // If we have a session, update the server's session with the new preset
+            if (this.sessionId) {
+                const response = await fetch(`/three-body/api/${this.sessionId}/load-preset/${presetId}`, {
+                    method: 'POST'
+                });
 
-        // Update input fields
-        this.updateInputFields();
-        this.render();
+                if (!response.ok) {
+                    throw new Error(`Failed to load preset into session: ${response.status}`);
+                }
+
+                const serverData = await response.json();
+                console.log('Loaded preset into session:', presetId, serverData);
+
+                // Convert server format to client format
+                this.bodies = serverData.bodies.map(b => ({
+                    pos: { x: b.pos.x, y: b.pos.y },
+                    vel: { x: b.vel.x, y: b.vel.y },
+                    mass: b.mass,
+                    color: '#' + b.color
+                }));
+
+                this.time = serverData.time;
+                this.stepCount = serverData.stepCount;
+                this.trails = [[], [], []];
+            } else {
+                // Fallback: load directly from presets endpoint (used during initialization)
+                const response = await fetch(`/three-body/api/presets/${presetId}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to load preset: ${response.status}`);
+                }
+
+                const serverData = await response.json();
+                console.log('Loaded preset from server:', presetId, serverData);
+
+                // Convert server format to client format
+                this.bodies = serverData.bodies.map(b => ({
+                    pos: { x: b.pos.x, y: b.pos.y },
+                    vel: { x: b.vel.x, y: b.vel.y },
+                    mass: b.mass,
+                    color: '#' + b.color
+                }));
+
+                this.time = serverData.time;
+                this.stepCount = serverData.stepCount;
+                this.trails = [[], [], []];
+            }
+
+            // Update input fields
+            this.updateInputFields();
+            this.render();
+        } catch (error) {
+            console.error('Failed to load preset from server:', error);
+            alert(`Failed to load preset "${presetId}". Server connection error.`);
+        }
     }
 
     updateInputFields() {
@@ -346,13 +431,34 @@ class ThreeBodySimulation {
     }
 
     // Animation loop
-    animate() {
+    async animate() {
         if (!this.isRunning) return;
 
-        // Run multiple physics steps per frame for speed
-        const stepsThisFrame = Math.floor(this.stepsPerFrame * this.speed);
-        for (let i = 0; i < stepsThisFrame; i++) {
-            this.eulerStep();
+        if (this.serverMode) {
+            // Server-side physics mode
+            // Check if we need to refill the buffer
+            if (this.serverStepBuffer.length === 0) {
+                await this.fillServerBuffer();
+            }
+
+            // Apply the next server state
+            if (this.applyServerStep()) {
+                // Successfully applied server step
+            } else {
+                // Buffer is empty, wait for next frame
+                console.warn('Server buffer empty, waiting...');
+            }
+        } else {
+            // Client-side physics mode (original behavior)
+            const stepsThisFrame = Math.floor(this.stepsPerFrame * this.speed);
+            for (let i = 0; i < stepsThisFrame; i++) {
+                this.eulerStep();
+            }
+
+            // Checkpoint periodically (only in client mode - server already has authoritative state)
+            if (this.sessionId && this.stepCount - this.lastCheckpoint >= this.checkpointInterval) {
+                this.checkpoint();
+            }
         }
 
         this.render();
@@ -390,8 +496,10 @@ class ThreeBodySimulation {
         }
     }
 
-    // Save state to server
-    async saveState() {
+    // Checkpoint state to server (automatic, silent)
+    async checkpoint() {
+        if (!this.sessionId) return;
+
         try {
             const stateData = {
                 bodies: this.bodies,
@@ -401,22 +509,156 @@ class ThreeBodySimulation {
                 dt: this.dt
             };
 
-            // TODO: Implement server API call
-            // For now, just log to console and save to localStorage
-            console.log('Saving state:', stateData);
-            localStorage.setItem('three-body-state', JSON.stringify(stateData));
+            const response = await fetch(`/three-body/api/${this.sessionId}/checkpoint`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(stateData)
+            });
 
-            // Generate session ID if we don't have one
-            if (!this.sessionId) {
-                this.sessionId = this.generateUUID();
-                document.getElementById('session-id').textContent = this.sessionId;
+            if (response.ok) {
+                this.lastCheckpoint = this.stepCount;
+                console.log(`Checkpoint saved at step ${this.stepCount}`);
+            } else {
+                console.warn('Checkpoint failed:', await response.text());
             }
+        } catch (error) {
+            console.warn('Checkpoint error:', error);
+        }
+    }
 
-            alert('State saved successfully!');
+    // Save state to server (manual, with feedback)
+    async saveState() {
+        if (!this.sessionId) {
+            alert('No active session. Please refresh the page.');
+            return;
+        }
+
+        try {
+            // Checkpoint the current state
+            await this.checkpoint();
+            alert(`State saved successfully!\nSession: ${this.sessionId}\nStep: ${this.stepCount}`);
         } catch (error) {
             console.error('Error saving state:', error);
             alert('Failed to save state');
         }
+    }
+
+    // Toggle between client-side and server-side physics
+    toggleServerMode(enabled) {
+        const wasRunning = this.isRunning;
+
+        if (wasRunning) {
+            this.pause();
+        }
+
+        this.serverMode = enabled;
+
+        // Clear the server buffer when toggling
+        this.serverStepBuffer = [];
+        this.isRequestingSteps = false;
+
+        console.log(`Physics mode: ${enabled ? 'Server-side' : 'Client-side'}`);
+
+        if (wasRunning) {
+            // Restart the simulation in the new mode
+            this.play();
+        }
+    }
+
+    // Request physics steps from server (server-authoritative mode)
+    async advanceOnServer(numSteps) {
+        if (!this.sessionId) {
+            console.error('No session ID for server advance');
+            return null;
+        }
+
+        if (this.isRequestingSteps) {
+            console.warn('Already requesting steps from server');
+            return null;
+        }
+
+        try {
+            this.isRequestingSteps = true;
+
+            const response = await fetch(`/three-body/api/${this.sessionId}/advance`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ steps: numSteps })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server advance failed: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Convert server format to client format
+            const serverState = {
+                bodies: data.bodies.map(b => ({
+                    pos: { x: b.pos.x, y: b.pos.y },
+                    vel: { x: b.vel.x, y: b.vel.y },
+                    mass: b.mass,
+                    color: '#' + b.color
+                })),
+                time: data.time,
+                stepCount: data.stepCount
+            };
+
+            return serverState;
+        } catch (error) {
+            console.error('Server advance error:', error);
+            return null;
+        } finally {
+            this.isRequestingSteps = false;
+        }
+    }
+
+    // Fill the server step buffer
+    async fillServerBuffer() {
+        if (this.serverStepBuffer.length > 0 || this.isRequestingSteps) {
+            return; // Already have steps or currently requesting
+        }
+
+        console.log(`Requesting ${this.bufferSize} steps from server...`);
+
+        // Request a batch of steps from server
+        // The server will advance by bufferSize steps and return the final state
+        // We'll need to interpolate or just jump to that state
+        const finalState = await this.advanceOnServer(this.bufferSize);
+
+        if (finalState) {
+            // For Phase 1, we just jump to the final state
+            // In Phase 2, we could interpolate intermediate states
+            this.serverStepBuffer.push(finalState);
+        }
+    }
+
+    // Apply next step from server buffer
+    applyServerStep() {
+        if (this.serverStepBuffer.length === 0) {
+            return false;
+        }
+
+        const state = this.serverStepBuffer.shift();
+
+        // Update local state with server-authoritative data
+        this.bodies = state.bodies;
+        this.time = state.time;
+        this.stepCount = state.stepCount;
+
+        // Update trails
+        this.bodies.forEach((body, i) => {
+            this.trails[i].push({ x: body.pos.x, y: body.pos.y });
+            if (this.trails[i].length > this.maxTrailLength) {
+                this.trails[i].shift();
+            }
+        });
+
+        return true;
     }
 
     generateUUID() {

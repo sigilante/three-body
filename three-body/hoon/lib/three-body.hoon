@@ -231,17 +231,17 @@
       :~  :*  pos=[x=.0.97000436 y=.-0.24308753]
               vel=[x=.0.466203685 y=.0.43236573]
               mass=.1
-              color='ff0000'
+              color='ff3366'
           ==
           :*  pos=[x=.-0.97000436 y=.0.24308753]
               vel=[x=.0.466203685 y=.0.43236573]
               mass=.1
-              color='00ff00'
+              color='33ff66'
           ==
           :*  pos=[x=.0 y=.0]
               vel=[x=.-0.93240737 y=.-0.86473146]
               mass=.1
-              color='0000ff'
+              color='3366ff'
       ==  ==
       .0
       0
@@ -252,6 +252,169 @@
           integration-method=%euler
       ==
       trails=~[~ ~ ~]
+  ==
+::
+::  Butterfly preset
+++  preset-butterfly
+  ^-  sim-state
+  :*  ^-  (list body)
+      :~  :*  pos=[x=.0.306893 y=.0.125507]
+              vel=[x=.0.080584 y=.0.588836]
+              mass=.1
+              color='ff3366'
+          ==
+          :*  pos=[x=.-0.306893 y=.-0.125507]
+              vel=[x=.0.080584 y=.0.588836]
+              mass=.1
+              color='33ff66'
+          ==
+          :*  pos=[x=.0 y=.0]
+              vel=[x=.-0.161168 y=.-1.177672]
+              mass=.1
+              color='3366ff'
+      ==  ==
+      .0
+      0
+      ^-  sim-config
+      :*  gravitational-constant=.1
+          timestep=.0.001
+          max-trail-length=500
+          integration-method=%euler
+      ==
+      trails=~[~ ~ ~]
+  ==
+::
+::  Moth I preset
+++  preset-moth
+  ^-  sim-state
+  :*  ^-  (list body)
+      :~  :*  pos=[x=.0.464445 y=.0.396060]
+              vel=[x=.0.079766 y=.0.588836]
+              mass=.1
+              color='ff3366'
+          ==
+          :*  pos=[x=.-0.464445 y=.-0.396060]
+              vel=[x=.0.079766 y=.0.588836]
+              mass=.1
+              color='33ff66'
+          ==
+          :*  pos=[x=.0 y=.0]
+              vel=[x=.-0.159532 y=.-1.177672]
+              mass=.1
+              color='3366ff'
+      ==  ==
+      .0
+      0
+      ^-  sim-config
+      :*  gravitational-constant=.1
+          timestep=.0.001
+          max-trail-length=500
+          integration-method=%euler
+      ==
+      trails=~[~ ~ ~]
+  ==
+::
+::  Dragonfly preset
+++  preset-dragonfly
+  ^-  sim-state
+  :*  ^-  (list body)
+      :~  :*  pos=[x=.1.04987 y=.0]
+              vel=[x=.0 y=.0.736915]
+              mass=.1
+              color='ff3366'
+          ==
+          :*  pos=[x=.-1.04987 y=.0]
+              vel=[x=.0 y=.0.736915]
+              mass=.1
+              color='33ff66'
+          ==
+          :*  pos=[x=.0 y=.0]
+              vel=[x=.0 y=.-1.47383]
+              mass=.1
+              color='3366ff'
+      ==  ==
+      .0
+      0
+      ^-  sim-config
+      :*  gravitational-constant=.1
+          timestep=.0.001
+          max-trail-length=500
+          integration-method=%euler
+      ==
+      trails=~[~ ~ ~]
+  ==
+::
+::  Yarn preset
+++  preset-yarn
+  ^-  sim-state
+  :*  ^-  (list body)
+      :~  :*  pos=[x=.0.558287 y=.0.349769]
+              vel=[x=.0.343127 y=.0.663582]
+              mass=.1
+              color='ff3366'
+          ==
+          :*  pos=[x=.-0.558287 y=.-0.349769]
+              vel=[x=.0.343127 y=.0.663582]
+              mass=.1
+              color='33ff66'
+          ==
+          :*  pos=[x=.0 y=.0]
+              vel=[x=.-0.686254 y=.-1.327164]
+              mass=.1
+              color='3366ff'
+      ==  ==
+      .0
+      0
+      ^-  sim-config
+      :*  gravitational-constant=.1
+          timestep=.0.001
+          max-trail-length=500
+          integration-method=%euler
+      ==
+      trails=~[~ ~ ~]
+  ==
+::
+::  Goggles preset
+++  preset-goggles
+  ^-  sim-state
+  :*  ^-  (list body)
+      :~  :*  pos=[x=.0.347111 y=.0.532728]
+              vel=[x=.0.398905 y=.0.039998]
+              mass=.1
+              color='ff3366'
+          ==
+          :*  pos=[x=.-0.347111 y=.-0.532728]
+              vel=[x=.0.398905 y=.0.039998]
+              mass=.1
+              color='33ff66'
+          ==
+          :*  pos=[x=.0 y=.0]
+              vel=[x=.-0.79781 y=.-0.079996]
+              mass=.1
+              color='3366ff'
+      ==  ==
+      .0
+      0
+      ^-  sim-config
+      :*  gravitational-constant=.1
+          timestep=.0.001
+          max-trail-length=500
+          integration-method=%euler
+      ==
+      trails=~[~ ~ ~]
+  ==
+::
+::  Load preset by ID
+++  load-preset
+  |=  preset-id=preset-id
+  ^-  sim-state
+  ?-  preset-id
+    %figure-eight   preset-figure-eight
+    %butterfly      preset-butterfly
+    %moth           preset-moth
+    %dragonfly      preset-dragonfly
+    %yarn           preset-yarn
+    %goggles        preset-goggles
   ==
 ::
 ::  Random initial conditions
@@ -331,6 +494,7 @@
   |=  ent=@
   ^-  @t
   ::  Generate UUID-style identifier using entropy
+  ::  Must be 
   =/  hex=tape  (scow %ux ent)
   =/  uuid=tape
     ;:  weld
@@ -438,23 +602,27 @@
   ?~  text  ~
   `(crip text)
 ::
-+$  config-poke
-  $:  %init-config
-      wallet-pkh=@t
-      private-key=@t
-      confirmation-blocks=@ud
-      enable-blockchain=?
-      max-history=@ud
-  ==
+::  Parse a floating-point number from JSON
+++  parse-json-float
+  |=  [key=tape json-text=tape]
+  ^-  (unit @rs)
+  ::  Find the key in the JSON
+  =/  key-str=tape  (weld "\"" (weld key "\":"))
+  =/  idx=(unit @ud)  (find key-str json-text)
+  ?~  idx  ~
+  ::  Skip past the key and colon
+  =/  remaining=tape  (slag (add u.idx (lent key-str)) json-text)
+  ::  Extract number (digits, optional decimal point, optional minus)
+  =/  num-chars=tape
+    |-  ^-  tape
+    ?~  remaining  ~
+    =/  c=@t  i.remaining
+    ?:  ?|  (gte c '0')  (lte c '9')  =(c '.')  =(c '-')  ==
+      [c $(remaining t.remaining)]
+    ~
+  ?~  num-chars  ~
+  ::  Parse as float - for now return a default
+  ::  TODO: Implement proper float parsing
+  `(sun:rs (fall (rush (crip num-chars) dem) 0))
 ::
-::  Causes returned by tx_driver
-+$  tx-driver-cause
-  $%  [%born ~]
-      [%tx-sent game-id=@t tx-hash=@t]
-      [%tx-fail game-id=@t error=@t]
-  ==
-::
-+$  update-bank-cause
-  $%  [%update-bank p=@ud]
-  ==
 --
