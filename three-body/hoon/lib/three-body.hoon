@@ -178,7 +178,7 @@
     %+  turn  new-bodies
     |=  b=body
     ^-  (list vec2)
-    (scag max-trail-length.config.state ~[pos.b])
+    (scag max-trail-length.config.state `(list (pair @rs @rs))`~[pos.b])
   ::  Return updated state
   :*  bodies=new-bodies
       time=(add:rs time.state dt)
@@ -228,18 +228,18 @@
 ++  preset-figure-eight
   ^-  sim-state
   :*  ^-  (list body)
-      :~  :*  pos=[x=.~0.97000436 y=.~-0.24308753]
-              vel=[x=.~0.466203685 y=.~0.43236573]
+      :~  :*  pos=[x=.0.97000436 y=.-0.24308753]
+              vel=[x=.0.466203685 y=.0.43236573]
               mass=.1
               color='ff0000'
           ==
-          :*  pos=[x=.~-0.97000436 y=.~0.24308753]
-              vel=[x=.~0.466203685 y=.~0.43236573]
+          :*  pos=[x=.-0.97000436 y=.0.24308753]
+              vel=[x=.0.466203685 y=.0.43236573]
               mass=.1
               color='00ff00'
           ==
           :*  pos=[x=.0 y=.0]
-              vel=[x=.~-0.93240737 y=.~-0.86473146]
+              vel=[x=.-0.93240737 y=.-0.86473146]
               mass=.1
               color='0000ff'
       ==  ==
@@ -247,7 +247,7 @@
       0
       ^-  sim-config
       :*  gravitational-constant=.1
-          timestep=.~0.001
+          timestep=.0.001
           max-trail-length=500
           integration-method=%euler
       ==
@@ -268,9 +268,9 @@
   ^-  tape
   ;:  weld
     "\{\"x\":"
-    (r-co:co (rlys (san:rs x.v)))
+    (r-co:co (drg:rs x.v))
     ",\"y\":"
-    (r-co:co (rlys (san:rs y.v)))
+    (r-co:co (drg:rs y.v))
     "}"
   ==
 ::
@@ -283,7 +283,7 @@
     ",\"vel\":"
     (vec2-to-json vel.b)
     ",\"mass\":"
-    (r-co:co (rlys (san:rs mass.b)))
+    (r-co:co (drg:rs mass.b))
     ",\"color\":\""
     (trip color.b)
     "\"}"
@@ -309,7 +309,7 @@
     "\{\"bodies\":"
     (bodies-to-json bodies.state)
     ",\"time\":"
-    (r-co:co (rlys (san:rs time.state)))
+    (r-co:co (drg:rs time.state))
     ",\"stepCount\":"
     (a-co:co step-count.state)
     "}"
