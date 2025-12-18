@@ -1,14 +1,12 @@
 ::  three-body/lib/three-body.hoon
 ::  Data structures and physics for three-body simulation
 ::
+/-  lagoon
+/+  lagoon
+/+  seq
 /+  txt=types
 ::
-/=  ztd  /common/ztd/three
-::  Wallet imports (for transaction building)
-/=  transact      /common/tx-engine
-/=  tx-builder    /apps/wallet/lib/tx-builder
-/=  txt           /apps/tx/lib/types
-/=  wt            /apps/wallet/lib/types
+:: /=  ztd  /common/ztd/three
 ::
 ::  three-body/lib/three-body.hoon
 ::  Physics simulation types and functions
@@ -167,7 +165,7 @@
     |=(i=@ud (calc-total-acceleration bodies.state i g))
   ::  Update velocities and positions
   =/  new-bodies=(list body)
-    %+  turn  (zip:rlying bodies.state accelerations)
+    %+  turn  (zip:seq bodies.state accelerations)
     |=  [b=body acc=vec2]
     ^-  body
     =/  new-vel=vec2
@@ -229,30 +227,30 @@
 ::  Figure-8 orbit (Chenciner-Montgomery solution)
 ++  preset-figure-eight
   ^-  sim-state
-  :*  bodies=~
-        :*  pos=[x=.~0.97000436 y=.~-0.24308753]
-            vel=[x=.~0.466203685 y=.~0.43236573]
-            mass=.1
-            color='ff0000'
-        ==
-        :*  pos=[x=.~-0.97000436 y=.~0.24308753]
-            vel=[x=.~0.466203685 y=.~0.43236573]
-            mass=.1
-            color='00ff00'
-        ==
-        :*  pos=[x=.0 y=.0]
-            vel=[x=.~-0.93240737 y=.~-0.86473146]
-            mass=.1
-            color='0000ff'
-        ==
+  :*  ^-  (list body)
+      :~  :*  pos=[x=.~0.97000436 y=.~-0.24308753]
+              vel=[x=.~0.466203685 y=.~0.43236573]
+              mass=.1
+              color='ff0000'
+          ==
+          :*  pos=[x=.~-0.97000436 y=.~0.24308753]
+              vel=[x=.~0.466203685 y=.~0.43236573]
+              mass=.1
+              color='00ff00'
+          ==
+          :*  pos=[x=.0 y=.0]
+              vel=[x=.~-0.93240737 y=.~-0.86473146]
+              mass=.1
+              color='0000ff'
+      ==  ==
+      .0
+      0
+      ^-  sim-config
+      :*  gravitational-constant=.1
+          timestep=.~0.001
+          max-trail-length=500
+          integration-method=%euler
       ==
-      time=.0
-      step-count=0
-      config=:*  gravitational-constant=.1
-                 timestep=.~0.001
-                 max-trail-length=500
-                 integration-method=%euler
-             ==
       trails=~[~ ~ ~]
   ==
 ::
@@ -263,23 +261,6 @@
   ::  Use entropy to generate random positions/velocities
   ::  For now, return a simple default
   preset-figure-eight
-::
-::  Helper function to find substring in string
-++  find
-  |=  [nedl=tape hstk=tape]
-  ^-  (unit @ud)
-  =|  pos=@ud
-  |-
-  ?~  hstk  ~
-  ::  Check if needle matches at current position
-  =/  match=?
-    |-  ^-  ?
-    ?~  nedl  %.y
-    ?~  hstk  %.n
-    ?.  =(i.nedl i.hstk)  %.n
-    $(nedl t.nedl, hstk t.hstk)
-  ?:  match  `pos
-  $(hstk t.hstk, pos +(pos))
 ::
 ::  JSON encoding helpers
 ++  vec2-to-json

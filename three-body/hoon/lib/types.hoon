@@ -1,5 +1,3 @@
-/=  transact  /common/tx-engine
-::
 |%
 ::
 +$  cause

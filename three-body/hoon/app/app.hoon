@@ -3,9 +3,6 @@
 ::
 /+  http, three-body, txt=types
 /=  *  /common/wrapper
-::  Wallet imports
-/=  wallet        /apps/wallet/wallet
-/=  wt            /apps/wallet/lib/types
 ::  Static resources (load as [@ud @t])
 /*  index         %html   /app/site/index/html
 /*  style         %css    /app/site/style/css
